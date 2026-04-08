@@ -1,0 +1,13 @@
+{
+  "name": "riot-live-agent",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,10 +1,13 @@
 import type { RegionCode, SearchResponse } from "../types/riot";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
+
 export async function fetchRiotProfile(input: {
   region: RegionCode;
   riotId: string;
 }): Promise<SearchResponse> {
-  const url = `/api/riot/search?region=${encodeURIComponent(
+  const url = `${API_BASE_URL}/api/riot/search?region=${encodeURIComponent(
     input.region
   )}&riotId=${encodeURIComponent(input.riotId)}`;
 

@@ -64,6 +64,11 @@ function localDateAtEndOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
 }
 
+function formatDate(date?: string | null) {
+  if (!date) return '-';
+  return new Date(date).toLocaleDateString();
+}
+
 function formatLocalDate(date: Date) {
   return date.toLocaleDateString();
 }
@@ -426,13 +431,6 @@ export default function MetaPage() {
 
   const [analyticsResponse, setAnalyticsResponse] = useState<AnalyticsSummaryResponse | null>(null);
   const [lpHistory, setLpHistory] = useState<LpHistoryPoint[]>([]);
-  const [lpHistoryTotals, setLpHistoryTotals] = useState<{
-    lpGained: number;
-    lpLost: number;
-    netLp: number;
-    winsDetected: number;
-    lossesDetected: number;
-  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncingQuick, setSyncingQuick] = useState(false);
@@ -452,10 +450,8 @@ export default function MetaPage() {
       });
 
       setLpHistory(data.points || []);
-      setLpHistoryTotals(data.totals || null);
     } catch {
       setLpHistory([]);
-      setLpHistoryTotals(null);
     }
   }
 
@@ -549,14 +545,16 @@ export default function MetaPage() {
     loadLpHistory(lpQueue);
   }, [lpQueue]);
 
+  const sample = analyticsResponse?.sample || null;
   const data = analyticsResponse?.analytics || null;
+  const officialRecord = analyticsResponse?.officialRecord || null;
   const cacheCoverage = analyticsResponse?.cacheCoverage || null;
   const rankedEntries = analyticsResponse?.ranked?.leagueEntries || [];
-  const soloRecord = useMemo(
+  const soloRankedEntry = useMemo(
     () => rankedEntries.find((entry) => entry.queueType === 'RANKED_SOLO_5x5') || null,
     [rankedEntries]
   );
-  const flexRecord = useMemo(
+  const flexRankedEntry = useMemo(
     () => rankedEntries.find((entry) => entry.queueType === 'RANKED_FLEX_SR') || null,
     [rankedEntries]
   );
@@ -565,26 +563,17 @@ export default function MetaPage() {
     const queueType = lpQueue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
     return rankedEntries.find((entry) => entry.queueType === queueType) || null;
   }, [rankedEntries, lpQueue]);
-  const lpChanges = useMemo(() => {
-    return lpHistory.reduce(
-      (acc, point) => {
-        if (point.lpChange > 0) acc.gained += point.lpChange;
-        if (point.lpChange < 0) acc.lost += Math.abs(point.lpChange);
-        return acc;
-      },
-      { gained: 0, lost: 0 }
-    );
+
+    const lpChangeSummary = useMemo(() => {
+    const deltas = lpHistory.slice(1).map((item) => item.lpChange);
+    const gained = deltas.filter((delta) => delta > 0).reduce((sum, delta) => sum + delta, 0);
+    const lost = deltas.filter((delta) => delta < 0).reduce((sum, delta) => sum + Math.abs(delta), 0);
+    return {
+      gained,
+      lost,
+      net: gained - lost,
+    };
   }, [lpHistory]);
-
-  const soloEntry = useMemo(
-    () => rankedEntries.find((entry) => entry.queueType === 'RANKED_SOLO_5x5') || null,
-    [rankedEntries]
-  );
-  const flexEntry = useMemo(
-    () => rankedEntries.find((entry) => entry.queueType === 'RANKED_FLEX_SR') || null,
-    [rankedEntries]
-  );
-
   const scoreTone =
     !data ? 'default' : data.summary.winRate >= 55 ? 'good' : data.summary.winRate >= 50 ? 'warn' : 'bad';
 
@@ -648,95 +637,63 @@ export default function MetaPage() {
               {data ? <ScoreBadge score={data.performanceScore} /> : null}
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-4">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">ELO Flex</div>
-                {flexEntry ? (
+                <div className="text-xs font-medium text-[var(--text-muted)]">SoloQ oficial</div>
+                {soloRankedEntry ? (
                   <>
                     <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                      {flexEntry.tier} {flexEntry.rank}
-                    </div>
+                      {soloRankedEntry.tier} {soloRankedEntry.rank}                    </div>
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                      {flexEntry.leaguePoints} LP · {flexEntry.wins}W / {flexEntry.losses}L
+                      {soloRankedEntry.leaguePoints} LP · {soloRankedEntry.wins}W / {soloRankedEntry.losses}L
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3 text-sm text-[var(--text-muted)]">No rankeado en Flex.</div>
-                )}
-              </div>
-              <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">SoloQ actual</div>
-                {soloRecord ? (
-                  <>
-                    <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                      {soloRecord.tier} {soloRecord.rank}
-                    </div>
-                    <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                      {soloRecord.leaguePoints} LP · {soloRecord.wins}W / {soloRecord.losses}L
-                    </div>
-                  </>
-                ) : (
-                  <div className="mt-3 text-sm text-[var(--text-muted)]">Sin datos de SoloQ.</div>
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">No rank en SoloQ.</div>
                 )}
               </div>
 
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">Flex actual</div>
-                {flexRecord ? (
+                <div className="text-xs font-medium text-[var(--text-muted)]">Flex oficial</div>
+                {flexRankedEntry ? (
                   <>
                     <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                      {flexRecord.tier} {flexRecord.rank}
+                      {flexRankedEntry.tier} {flexRankedEntry.rank}
                     </div>
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                      {flexRecord.leaguePoints} LP · {flexRecord.wins}W / {flexRecord.losses}L
+                      {flexRankedEntry.leaguePoints} LP · {flexRankedEntry.wins}W / {flexRankedEntry.losses}L
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3 text-sm text-[var(--text-muted)]">Sin datos de Flex.</div>
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">No rank en Flex.</div>
                 )}
               </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
                 <div className="text-xs font-medium text-[var(--text-muted)]">Resumen de temporada</div>
-                <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">{data?.summary.total ?? 0}</div>
+                <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
+                  {data?.summary.total ?? 0}
+                </div>
                 <div className="mt-2 text-sm text-[var(--text-secondary)]">
                   {data ? `${data.summary.wins}W / ${data.summary.losses}L · ${data.summary.winRate}% WR` : 'Sin datos'}
                 </div>
+                {officialRecord ? (
+                  <div className="mt-2 text-xs text-[var(--text-muted)]">
+                    Cola seleccionada: {officialRecord.queueType === 'RANKED_FLEX_SR' ? 'Flex' : 'SoloQ'}
+                  </div>
+                ) : null}
               </div>
-              <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">SoloQ en temporada</div>
-                <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                  {queueAnalytics ? queueAnalytics.solo.summary.total : 0}
-                </div>
-                <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                  {queueAnalytics
-                    ? `${queueAnalytics.solo.summary.wins}W / ${queueAnalytics.solo.summary.losses}L · ${queueAnalytics.solo.summary.winRate}% WR`
-                    : 'Sin datos'}
-                </div>
-              </div>
-              <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">Flex en temporada</div>
-                <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                  {queueAnalytics ? queueAnalytics.flex.summary.total : 0}
-                </div>
-                <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                  {queueAnalytics
-                    ? `${queueAnalytics.flex.summary.wins}W / ${queueAnalytics.flex.summary.losses}L · ${queueAnalytics.flex.summary.winRate}% WR`
-                    : 'Sin datos'}
-                </div>
-              </div>
-            </div>
 
-            <div className="mt-4 rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-              <div className="text-xs font-medium text-[var(--text-muted)]">Cobertura del historial</div>
-              <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                {cacheCoverage ? `${cacheCoverage.coveragePercent}%` : '-'}
-              </div>
-              <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                {cacheCoverage
-                  ? `${cacheCoverage.cachedMatches} / ${cacheCoverage.officialMatches} oficiales`
-                  : 'No disponible'}
+              <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
+                <div className="text-xs font-medium text-[var(--text-muted)]">Cobertura del historial</div>
+                <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
+                  {cacheCoverage ? `${cacheCoverage.coveragePercent}%` : '-'}
+                </div>
+                <div className="mt-2 text-sm text-[var(--text-secondary)]">
+                  {cacheCoverage
+                    ? `${cacheCoverage.cachedMatches} / ${cacheCoverage.officialMatches} oficiales`
+                    : 'No disponible'}
+                </div>
               </div>
             </div>
           </div>
@@ -1180,10 +1137,25 @@ export default function MetaPage() {
                   )}
                 </div>
 
-                <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <div className="mt-6 grid gap-4 md:grid-cols-5">
                   <StatCard
                     label="LP actual"
                     value={lpHistory.length ? lpHistory[lpHistory.length - 1].leaguePoints : '-'}
+                  />
+                  <StatCard
+                    label="LP ganados"
+                    value={`+${lpChangeSummary.gained}`}
+                    tone="good"
+                  />
+                  <StatCard
+                    label="LP perdidos"
+                    value={`-${lpChangeSummary.lost}`}
+                    tone="bad"
+                  />
+                  <StatCard
+                    label="Balance LP"
+                    value={`${lpChangeSummary.net > 0 ? '+' : ''}${lpChangeSummary.net}`}
+                    tone={lpChangeSummary.net >= 0 ? 'info' : 'warn'}
                   />
                   <StatCard
                     label="Cambio más reciente"
@@ -1193,18 +1165,6 @@ export default function MetaPage() {
                         : '-'
                     }
                     tone="info"
-                  />
-                  <StatCard
-                    label="LP ganado"
-                    value={`+${lpChanges.gained}`}
-                    helper="Suma de subidas entre snapshots"
-                    tone="good"
-                  />
-                  <StatCard
-                    label="LP perdido"
-                    value={`-${lpChanges.lost}`}
-                    helper="Suma de bajadas entre snapshots"
-                    tone="bad"
                   />
                   <StatCard
                     label="Snapshots"

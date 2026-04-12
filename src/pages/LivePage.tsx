@@ -18,17 +18,24 @@ type ChampionData = {
 type ChampionMap = Record<number, ChampionData>;
 
 export default function LivePage() {
+  const AUTO_REFRESH_SECONDS = 20;
   const navigate = useNavigate();
   const profile = readStoredProfile();
 
   const [data, setData] = useState<any>(null);
   const [championMap, setChampionMap] = useState<ChampionMap>({});
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshCountdown, setRefreshCountdown] = useState(AUTO_REFRESH_SECONDS);
   const [error, setError] = useState('');
 
-  async function load() {
+  async function load(silent = false) {
     try {
-      setLoading(true);
+      if (silent) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError('');
 
       const [result, champRes] = await Promise.all([
@@ -54,6 +61,7 @@ export default function LivePage() {
 
       setChampionMap(map);
       setData(result);
+      setRefreshCountdown(AUTO_REFRESH_SECONDS);
     } catch (err: any) {
       setError(
         err?.response?.data?.message ||
@@ -61,7 +69,11 @@ export default function LivePage() {
           'No se pudo cargar live game'
       );
     } finally {
-      setLoading(false);
+      if (silent) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
@@ -73,6 +85,22 @@ export default function LivePage() {
     }
 
     load();
+  }, [profile?.account?.puuid, profile?.resolvedPlatform]);
+
+  useEffect(() => {
+    if (!profile?.account?.puuid || !profile?.resolvedPlatform) return;
+
+    const timer = setInterval(() => {
+      setRefreshCountdown((prev) => {
+        if (prev <= 1) {
+          void load(true);
+          return AUTO_REFRESH_SECONDS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
   }, [profile?.account?.puuid, profile?.resolvedPlatform]);
 
   function getChampionImage(championId: number) {
@@ -202,13 +230,18 @@ export default function LivePage() {
             </button>
 
             <button
-              onClick={() => load()}
+              onClick={() => load(true)}
               disabled={loading}
               className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] transition-all hover:bg-[var(--bg-elevated)] disabled:opacity-50"
             >
               {loading ? 'Cargando...' : 'Refrescar'}
             </button>
           </div>
+        </div>
+
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-1.5 text-xs text-[var(--text-secondary)]">
+          <span>Auto-refresh en {refreshCountdown}s</span>
+          {refreshing ? <span className="text-blue-300">• actualizando</span> : null}
         </div>
 
         {loading && (

@@ -5,6 +5,7 @@ import {
   getMatchIdsByPuuid,
   getSummonerByPuuid,
   getLeagueEntriesBySummonerId,
+  getLeagueEntriesByPuuid,
 } from '../services/riot.service';
 
 type QueueMode = 'solo' | 'flex' | 'all';
@@ -939,7 +940,18 @@ async function saveRankSnapshots(puuid: string, platform: string) {
     const summoner = await getSummonerByPuuid(puuid, platform);
     if (!summoner?.id) return;
 
-    const entries = await getLeagueEntriesBySummonerId(summoner.id, platform);
+    let entries: any[] = [];
+
+    try {
+      entries = await getLeagueEntriesBySummonerId(summoner.id, platform);
+    } catch {
+      entries = [];
+    }
+
+    if (!entries.length) {
+      entries = await getLeagueEntriesByPuuid(summoner.puuid || puuid, platform).catch(() => []);
+    }
+
     if (!entries?.length) return;
 
     for (const entry of entries) {
@@ -1014,16 +1026,17 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
   const requestKey = `${platform}:${puuid}`;
 
   if (activeSyncRequests.has(requestKey)) {
-    return res.status(429).json({
-      success: false,
-      message: 'Ya hay una sincronización en progreso para este perfil. Espera un momento.',
+    return res.status(202).json({
+      success: true,
+      inProgress: true,
+      message: 'Ya hay una sincronización en progreso para este perfil. Espera un momento y recarga.',
     });
   }
 
   activeSyncRequests.add(requestKey);
 
   try {
-    const syncState = await prisma.playerSyncState.upsert({
+    await prisma.playerSyncState.upsert({
       where: {
         puuid_platform: {
           puuid,
@@ -1038,11 +1051,13 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
       update: {},
     });
 
-    let start = mode === 'full_backfill' ? 0 : syncState.lastMatchStart;
+    let start = 0;
     let saved = 0;
     let scannedIds = 0;
     let totalPages = 0;
     let keepGoing = true;
+    let consecutiveExisting = 0;
+    const existingStopThreshold = mode === 'full_backfill' ? Number.POSITIVE_INFINITY : 180;
 
     while (keepGoing) {
       const batchSize = 100;
@@ -1065,8 +1080,9 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
 
       const existingIds = new Set(existingMatches.map((m) => m.matchId));
       const missingIds = ids.filter((id: string) => !existingIds.has(id));
+      consecutiveExisting = missingIds.length === 0 ? consecutiveExisting + ids.length : 0;
 
-      const chunkSize = 2;
+      const chunkSize = 1;
 
       for (let i = 0; i < missingIds.length; i += chunkSize) {
         const chunk = missingIds.slice(i, i + chunkSize);
@@ -1123,7 +1139,7 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
           saved += rowsToInsert.length;
         }
 
-        await sleep(2500);
+        await sleep(1400);
       }
 
       start += ids.length;
@@ -1133,6 +1149,10 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
       }
 
       if (mode !== 'full_backfill' && saved >= requestedMaxMatches) {
+        keepGoing = false;
+      }
+
+      if (consecutiveExisting >= existingStopThreshold) {
         keepGoing = false;
       }
     }
@@ -1145,14 +1165,12 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
         },
       },
       data: {
-        lastMatchStart: start,
+        lastMatchStart: 0,
         lastFullSyncAt: new Date(),
       },
     });
 
-    if (mode !== 'full_backfill') {
-      await saveRankSnapshots(puuid, platform);
-    }
+    await saveRankSnapshots(puuid, platform);
 
     return res.json({
       success: true,
@@ -1235,18 +1253,25 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
     await saveRankSnapshots(puuid, platform);
 
     const summoner = await getSummonerByPuuid(puuid, platform).catch(() => null);
-    const leagueEntries = summoner?.id
-      ? await getLeagueEntriesBySummonerId(summoner.id, platform).catch(() => [])
-      : [];
+    let leagueEntries: any[] = [];
+    if (summoner?.id) {
+      leagueEntries = await getLeagueEntriesBySummonerId(summoner.id, platform).catch(() => []);
+      if (!leagueEntries.length) {
+        leagueEntries = await getLeagueEntriesByPuuid(summoner.puuid || puuid, platform).catch(
+          () => []
+        );
+      }
+    }
 
     const normalizedEntries = normalizeLeagueEntries(leagueEntries);
 
+    const soloOfficial =
+      normalizedEntries.find((e: any) => e.queueType === 'RANKED_SOLO_5x5') || null;
+    const flexOfficial =
+      normalizedEntries.find((e: any) => e.queueType === 'RANKED_FLEX_SR') || null;
+
     const officialRecord =
-      queue === 'solo'
-        ? normalizedEntries.find((e: any) => e.queueType === 'RANKED_SOLO_5x5') || null
-        : queue === 'flex'
-        ? normalizedEntries.find((e: any) => e.queueType === 'RANKED_FLEX_SR') || null
-        : null;
+      queue === 'solo' ? soloOfficial : queue === 'flex' ? flexOfficial : soloOfficial || flexOfficial;
 
     const dates = rows.map((m) => Number(m.gameCreation));
     const sample = {

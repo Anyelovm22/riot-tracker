@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import BackButton from '../components/common/BackButton';
+import { useNavigate } from 'react-router-dom';
 import { fetchMatchHistory } from '../services/matches';
 import { readStoredProfile } from '../utils/profileStorage';
 import { readCache, readCacheMeta, saveCache } from '../utils/appCache';
@@ -53,6 +54,7 @@ function getKdaRatio(player?: MatchPlayer | null) {
 }
 
 export default function MatchupPage() {
+  const navigate = useNavigate();
   const profile = readStoredProfile();
   const cached = readCache<any>('matches');
   const cacheMeta = readCacheMeta('matches');
@@ -73,7 +75,7 @@ export default function MatchupPage() {
 
       setError('');
 
-      const data = await ({
+      const data = await fetchMatchHistory({
         puuid: profile.account.puuid,
         platform: profile.resolvedPlatform,
         count: 20,
@@ -183,6 +185,12 @@ export default function MatchupPage() {
                         : 'border-red-500/20 bg-red-500/5'
                     }`}
                   >
+                    <button
+                      onClick={() => navigate(`/matches/${encodeURIComponent(match.matchId)}`)}
+                      className="mb-3 rounded-lg bg-[var(--bg-elevated)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+                    >
+                      Ver detalle
+                    </button>
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="flex gap-4">
                         <div className="shrink-0">

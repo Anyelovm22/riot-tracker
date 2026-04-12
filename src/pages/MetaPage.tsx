@@ -11,6 +11,7 @@ import {
   type LpHistoryPoint,
   type LpQueueMode,
 } from '../services/analytics';
+import { fetchRankedOverview } from '../services/ranked';
 import { readStoredProfile } from '../utils/profileStorage';
 import { getApiErrorMessage } from '../utils/httpError';
 import {
@@ -66,6 +67,11 @@ function localDateAtEndOfDay(date: Date) {
 
 function formatLocalDate(date: Date) {
   return date.toLocaleDateString();
+}
+
+function getRankIcon(tier?: string) {
+  if (!tier) return null;
+  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem/emblem-${tier.toLowerCase()}.png`;
 }
 
 function ScoreBadge({ score }: { score: number }) {
@@ -409,12 +415,13 @@ function MetricChart({
 export default function MetaPage() {
   const profile = readStoredProfile();
   const hasLoadedRef = useRef(false);
+  const autoSeedSyncRef = useRef(false);
 
   const today = useMemo(() => new Date(), []);
   const seasonOptions = useMemo(() => buildSeasonOptions(today), [today]);
   const defaultSeason = useMemo(() => resolveCurrentSeason(seasonOptions, today), [seasonOptions, today]);
 
-  const [selectedQueue, setSelectedQueue] = useState<QueueMode>('solo');
+  const [selectedQueue, setSelectedQueue] = useState<QueueMode>('all');
   const [lpQueue, setLpQueue] = useState<LpQueueMode>('solo');
   const [selectedView, setSelectedView] = useState<ViewMode>('summary');
   const [selectedSeasonKey, setSelectedSeasonKey] = useState<string>(defaultSeason?.key || '');
@@ -425,6 +432,7 @@ export default function MetaPage() {
   );
 
   const [analyticsResponse, setAnalyticsResponse] = useState<AnalyticsSummaryResponse | null>(null);
+  const [rankedOverview, setRankedOverview] = useState<any>(null);
   const [lpHistory, setLpHistory] = useState<LpHistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -481,6 +489,33 @@ export default function MetaPage() {
       });
 
       setAnalyticsResponse(data);
+      const ranked = await fetchRankedOverview({
+        puuid: profile.account.puuid,
+        platform: profile.resolvedPlatform,
+      }).catch(() => null);
+      setRankedOverview(ranked);
+
+      const hasNoAnalyticsSample = !data.analytics || data.sample?.totalMatches === 0;
+      if (hasNoAnalyticsSample && !autoSeedSyncRef.current) {
+        autoSeedSyncRef.current = true;
+        await syncAnalyticsMatches({
+          puuid: profile.account.puuid,
+          platform: profile.resolvedPlatform,
+          maxMatches: 120,
+          mode: 'incremental',
+        });
+
+        const refreshed = await fetchAnalyticsSummary({
+          puuid: profile.account.puuid,
+          platform: profile.resolvedPlatform,
+          queue: selectedQueue,
+          startAt: selectedSeason.start.toISOString(),
+          endAt: selectedSeason.end.toISOString(),
+          seasonKey: selectedSeason.key,
+        });
+        setAnalyticsResponse(refreshed);
+      }
+
       await loadLpHistory(lpQueue);
     } catch (err: any) {
       setError(getApiErrorMessage(err, 'No se pudo cargar el análisis'));
@@ -502,14 +537,19 @@ export default function MetaPage() {
 
       setError('');
 
-      await syncAnalyticsMatches({
+      const syncResult = await syncAnalyticsMatches({
         puuid: profile.account.puuid,
         platform: profile.resolvedPlatform,
         maxMatches,
         mode,
       });
 
-      if (mode === 'incremental') {
+      if (syncResult?.inProgress) {
+        setError(syncResult.message || 'Ya hay una sincronización en progreso.');
+        setTimeout(() => {
+          loadAnalytics(true);
+        }, 4000);
+      } else if (mode === 'incremental') {
         await loadAnalytics(true);
       } else {
         setTimeout(() => {
@@ -543,7 +583,10 @@ export default function MetaPage() {
   const data = analyticsResponse?.analytics || null;
   const officialRecord = analyticsResponse?.officialRecord || null;
   const cacheCoverage = analyticsResponse?.cacheCoverage || null;
-  const rankedEntries = analyticsResponse?.ranked?.leagueEntries || [];
+  const rankedEntries: any[] =
+    rankedOverview?.leagueEntries?.length
+      ? rankedOverview.leagueEntries
+      : analyticsResponse?.ranked?.leagueEntries || [];
   const soloRecord = useMemo(
     () => rankedEntries.find((entry) => entry.queueType === 'RANKED_SOLO_5x5') || null,
     [rankedEntries]
@@ -552,6 +595,7 @@ export default function MetaPage() {
     () => rankedEntries.find((entry) => entry.queueType === 'RANKED_FLEX_SR') || null,
     [rankedEntries]
   );
+  const bestAvailableRecord = officialRecord || soloRecord || flexRecord;
 
   const lpRankedEntry = useMemo(() => {
     const queueType = lpQueue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
@@ -634,13 +678,20 @@ export default function MetaPage() {
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
                 <div className="text-xs font-medium text-[var(--text-muted)]">Rango oficial actual</div>
-                {officialRecord ? (
+                {bestAvailableRecord ? (
                   <>
+                    {getRankIcon(bestAvailableRecord.tier) ? (
+                      <img
+                        src={getRankIcon(bestAvailableRecord.tier) || ''}
+                        alt={bestAvailableRecord.tier}
+                        className="mt-3 h-12 w-12 object-contain"
+                      />
+                    ) : null}
                     <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                      {officialRecord.tier} {officialRecord.rank}
+                      {bestAvailableRecord.tier} {bestAvailableRecord.rank}
                     </div>
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                      {officialRecord.leaguePoints} LP · {officialRecord.wins}W / {officialRecord.losses}L
+                      {bestAvailableRecord.leaguePoints} LP · {bestAvailableRecord.wins}W / {bestAvailableRecord.losses}L
                     </div>
                   </>
                 ) : (
@@ -651,6 +702,13 @@ export default function MetaPage() {
                 <div className="text-xs font-medium text-[var(--text-muted)]">SoloQ actual</div>
                 {soloRecord ? (
                   <>
+                    {getRankIcon(soloRecord.tier) ? (
+                      <img
+                        src={getRankIcon(soloRecord.tier) || ''}
+                        alt={soloRecord.tier}
+                        className="mt-3 h-12 w-12 object-contain"
+                      />
+                    ) : null}
                     <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
                       {soloRecord.tier} {soloRecord.rank}
                     </div>
@@ -667,6 +725,13 @@ export default function MetaPage() {
                 <div className="text-xs font-medium text-[var(--text-muted)]">Flex actual</div>
                 {flexRecord ? (
                   <>
+                    {getRankIcon(flexRecord.tier) ? (
+                      <img
+                        src={getRankIcon(flexRecord.tier) || ''}
+                        alt={flexRecord.tier}
+                        className="mt-3 h-12 w-12 object-contain"
+                      />
+                    ) : null}
                     <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
                       {flexRecord.tier} {flexRecord.rank}
                     </div>

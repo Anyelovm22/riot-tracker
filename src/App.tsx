@@ -4,6 +4,7 @@ import RequireProfile from './components/common/RequireProfile';
 
 import HomePage from './pages/HomePage';
 import MatchupPage from './pages/MatchupPage';
+import MatchDetailPage from './pages/MatchDetailPage';
 import MetaPage from './pages/MetaPage';
 import BuilderPage from './pages/BuilderPage';
 import ChampionPage from './pages/ChampionPage';
@@ -20,6 +21,14 @@ export default function App() {
           element={
             <RequireProfile>
               <MatchupPage />
+            </RequireProfile>
+          }
+        />
+        <Route
+          path="/matches/:matchId"
+          element={
+            <RequireProfile>
+              <MatchDetailPage />
             </RequireProfile>
           }
         />

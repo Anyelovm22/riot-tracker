@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { getMatchHistory } from '../controllers/matches.controller';
+import { getMatchDetail, getMatchHistory } from '../controllers/matches.controller';
 
 const router = Router();
 router.get('/history', getMatchHistory);
+router.get('/:matchId/detail', getMatchDetail);
 export default router;

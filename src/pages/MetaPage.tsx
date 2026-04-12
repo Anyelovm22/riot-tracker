@@ -426,6 +426,13 @@ export default function MetaPage() {
 
   const [analyticsResponse, setAnalyticsResponse] = useState<AnalyticsSummaryResponse | null>(null);
   const [lpHistory, setLpHistory] = useState<LpHistoryPoint[]>([]);
+  const [lpHistoryTotals, setLpHistoryTotals] = useState<{
+    lpGained: number;
+    lpLost: number;
+    netLp: number;
+    winsDetected: number;
+    lossesDetected: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncingQuick, setSyncingQuick] = useState(false);
@@ -445,8 +452,10 @@ export default function MetaPage() {
       });
 
       setLpHistory(data.points || []);
+      setLpHistoryTotals(data.totals || null);
     } catch {
       setLpHistory([]);
+      setLpHistoryTotals(null);
     }
   }
 
@@ -541,7 +550,6 @@ export default function MetaPage() {
   }, [lpQueue]);
 
   const data = analyticsResponse?.analytics || null;
-  const officialRecord = analyticsResponse?.officialRecord || null;
   const cacheCoverage = analyticsResponse?.cacheCoverage || null;
   const rankedEntries = analyticsResponse?.ranked?.leagueEntries || [];
   const soloRecord = useMemo(
@@ -567,6 +575,15 @@ export default function MetaPage() {
       { gained: 0, lost: 0 }
     );
   }, [lpHistory]);
+
+  const soloEntry = useMemo(
+    () => rankedEntries.find((entry) => entry.queueType === 'RANKED_SOLO_5x5') || null,
+    [rankedEntries]
+  );
+  const flexEntry = useMemo(
+    () => rankedEntries.find((entry) => entry.queueType === 'RANKED_FLEX_SR') || null,
+    [rankedEntries]
+  );
 
   const scoreTone =
     !data ? 'default' : data.summary.winRate >= 55 ? 'good' : data.summary.winRate >= 50 ? 'warn' : 'bad';
@@ -633,18 +650,18 @@ export default function MetaPage() {
 
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">Rango oficial actual</div>
-                {officialRecord ? (
+                <div className="text-xs font-medium text-[var(--text-muted)]">ELO Flex</div>
+                {flexEntry ? (
                   <>
                     <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                      {officialRecord.tier} {officialRecord.rank}
+                      {flexEntry.tier} {flexEntry.rank}
                     </div>
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                      {officialRecord.leaguePoints} LP · {officialRecord.wins}W / {officialRecord.losses}L
+                      {flexEntry.leaguePoints} LP · {flexEntry.wins}W / {flexEntry.losses}L
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3 text-sm text-[var(--text-muted)]">No disponible para esta cola.</div>
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">No rankeado en Flex.</div>
                 )}
               </div>
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
@@ -679,26 +696,47 @@ export default function MetaPage() {
                 )}
               </div>
 
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
                 <div className="text-xs font-medium text-[var(--text-muted)]">Resumen de temporada</div>
-                <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                  {data?.summary.total ?? 0}
-                </div>
+                <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">{data?.summary.total ?? 0}</div>
                 <div className="mt-2 text-sm text-[var(--text-secondary)]">
                   {data ? `${data.summary.wins}W / ${data.summary.losses}L · ${data.summary.winRate}% WR` : 'Sin datos'}
                 </div>
               </div>
-
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">Cobertura del historial</div>
+                <div className="text-xs font-medium text-[var(--text-muted)]">SoloQ en temporada</div>
                 <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                  {cacheCoverage ? `${cacheCoverage.coveragePercent}%` : '-'}
+                  {queueAnalytics ? queueAnalytics.solo.summary.total : 0}
                 </div>
                 <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                  {cacheCoverage
-                    ? `${cacheCoverage.cachedMatches} / ${cacheCoverage.officialMatches} oficiales`
-                    : 'No disponible'}
+                  {queueAnalytics
+                    ? `${queueAnalytics.solo.summary.wins}W / ${queueAnalytics.solo.summary.losses}L · ${queueAnalytics.solo.summary.winRate}% WR`
+                    : 'Sin datos'}
                 </div>
+              </div>
+              <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
+                <div className="text-xs font-medium text-[var(--text-muted)]">Flex en temporada</div>
+                <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
+                  {queueAnalytics ? queueAnalytics.flex.summary.total : 0}
+                </div>
+                <div className="mt-2 text-sm text-[var(--text-secondary)]">
+                  {queueAnalytics
+                    ? `${queueAnalytics.flex.summary.wins}W / ${queueAnalytics.flex.summary.losses}L · ${queueAnalytics.flex.summary.winRate}% WR`
+                    : 'Sin datos'}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
+              <div className="text-xs font-medium text-[var(--text-muted)]">Cobertura del historial</div>
+              <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
+                {cacheCoverage ? `${cacheCoverage.coveragePercent}%` : '-'}
+              </div>
+              <div className="mt-2 text-sm text-[var(--text-secondary)]">
+                {cacheCoverage
+                  ? `${cacheCoverage.cachedMatches} / ${cacheCoverage.officialMatches} oficiales`
+                  : 'No disponible'}
               </div>
             </div>
           </div>

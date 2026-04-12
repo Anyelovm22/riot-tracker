@@ -419,7 +419,7 @@ export default function MetaPage() {
   const seasonOptions = useMemo(() => buildSeasonOptions(today), [today]);
   const defaultSeason = useMemo(() => resolveCurrentSeason(seasonOptions, today), [seasonOptions, today]);
 
-  const [selectedQueue, setSelectedQueue] = useState<QueueMode>('all');
+  const [selectedQueue, setSelectedQueue] = useState<QueueMode>('solo');
   const [lpQueue, setLpQueue] = useState<LpQueueMode>('solo');
   const [selectedView, setSelectedView] = useState<ViewMode>('summary');
   const [selectedSeasonKey, setSelectedSeasonKey] = useState<string>(defaultSeason?.key || '');
@@ -550,11 +550,29 @@ export default function MetaPage() {
   const officialRecord = analyticsResponse?.officialRecord || null;
   const cacheCoverage = analyticsResponse?.cacheCoverage || null;
   const rankedEntries = analyticsResponse?.ranked?.leagueEntries || [];
+  const soloRankedEntry = useMemo(
+    () => rankedEntries.find((entry) => entry.queueType === 'RANKED_SOLO_5x5') || null,
+    [rankedEntries]
+  );
+  const flexRankedEntry = useMemo(
+    () => rankedEntries.find((entry) => entry.queueType === 'RANKED_FLEX_SR') || null,
+    [rankedEntries]
+  );
 
   const lpRankedEntry = useMemo(() => {
     const queueType = lpQueue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
     return rankedEntries.find((entry) => entry.queueType === queueType) || null;
   }, [rankedEntries, lpQueue]);
+  const lpChangeSummary = useMemo(() => {
+    const deltas = lpHistory.slice(1).map((item) => item.lpChange);
+    const gained = deltas.filter((delta) => delta > 0).reduce((sum, delta) => sum + delta, 0);
+    const lost = deltas.filter((delta) => delta < 0).reduce((sum, delta) => sum + Math.abs(delta), 0);
+    return {
+      gained,
+      lost,
+      net: gained - lost,
+    };
+  }, [lpHistory]);
 
   const scoreTone =
     !data ? 'default' : data.summary.winRate >= 55 ? 'good' : data.summary.winRate >= 50 ? 'warn' : 'bad';
@@ -619,20 +637,36 @@ export default function MetaPage() {
               {data ? <ScoreBadge score={data.performanceScore} /> : null}
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">Rango oficial actual</div>
-                {officialRecord ? (
+                <div className="text-xs font-medium text-[var(--text-muted)]">SoloQ oficial</div>
+                {soloRankedEntry ? (
                   <>
                     <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                      {officialRecord.tier} {officialRecord.rank}
+                      {soloRankedEntry.tier} {soloRankedEntry.rank}
                     </div>
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                      {officialRecord.leaguePoints} LP · {officialRecord.wins}W / {officialRecord.losses}L
+                      {soloRankedEntry.leaguePoints} LP · {soloRankedEntry.wins}W / {soloRankedEntry.losses}L
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3 text-sm text-[var(--text-muted)]">No disponible para esta cola.</div>
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">No rank en SoloQ.</div>
+                )}
+              </div>
+
+              <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
+                <div className="text-xs font-medium text-[var(--text-muted)]">Flex oficial</div>
+                {flexRankedEntry ? (
+                  <>
+                    <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
+                      {flexRankedEntry.tier} {flexRankedEntry.rank}
+                    </div>
+                    <div className="mt-2 text-sm text-[var(--text-secondary)]">
+                      {flexRankedEntry.leaguePoints} LP · {flexRankedEntry.wins}W / {flexRankedEntry.losses}L
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">No rank en Flex.</div>
                 )}
               </div>
 
@@ -644,6 +678,11 @@ export default function MetaPage() {
                 <div className="mt-2 text-sm text-[var(--text-secondary)]">
                   {data ? `${data.summary.wins}W / ${data.summary.losses}L · ${data.summary.winRate}% WR` : 'Sin datos'}
                 </div>
+                {officialRecord ? (
+                  <div className="mt-2 text-xs text-[var(--text-muted)]">
+                    Cola seleccionada: {officialRecord.queueType === 'RANKED_FLEX_SR' ? 'Flex' : 'SoloQ'}
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
@@ -1099,10 +1138,25 @@ export default function MetaPage() {
                   )}
                 </div>
 
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                <div className="mt-6 grid gap-4 md:grid-cols-5">
                   <StatCard
                     label="LP actual"
                     value={lpHistory.length ? lpHistory[lpHistory.length - 1].leaguePoints : '-'}
+                  />
+                  <StatCard
+                    label="LP ganados"
+                    value={`+${lpChangeSummary.gained}`}
+                    tone="good"
+                  />
+                  <StatCard
+                    label="LP perdidos"
+                    value={`-${lpChangeSummary.lost}`}
+                    tone="bad"
+                  />
+                  <StatCard
+                    label="Balance LP"
+                    value={`${lpChangeSummary.net > 0 ? '+' : ''}${lpChangeSummary.net}`}
+                    tone={lpChangeSummary.net >= 0 ? 'info' : 'warn'}
                   />
                   <StatCard
                     label="Cambio más reciente"

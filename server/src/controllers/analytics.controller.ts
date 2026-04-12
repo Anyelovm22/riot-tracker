@@ -899,30 +899,39 @@ function getQueueTypeFromQueueId(queueId: number) {
 }
 
 function rankToNumber(tier: string, rank: string, lp: number) {
-  const tierMap: Record<string, number> = {
-    IRON: 1,
-    BRONZE: 2,
-    SILVER: 3,
-    GOLD: 4,
-    PLATINUM: 5,
-    EMERALD: 6,
-    DIAMOND: 7,
-    MASTER: 8,
-    GRANDMASTER: 9,
-    CHALLENGER: 10,
+  const tierOrder = [
+    'IRON',
+    'BRONZE',
+    'SILVER',
+    'GOLD',
+    'PLATINUM',
+    'EMERALD',
+    'DIAMOND',
+    'MASTER',
+    'GRANDMASTER',
+    'CHALLENGER',
+  ];
+
+  const normalizedTier = (tier || '').toUpperCase();
+  const normalizedRank = (rank || '').toUpperCase();
+
+  const tierIndex = tierOrder.indexOf(normalizedTier);
+  if (tierIndex < 0) return Math.max(0, lp || 0);
+
+  if (normalizedTier === 'MASTER' || normalizedTier === 'GRANDMASTER' || normalizedTier === 'CHALLENGER') {
+    return tierIndex * 400 + Math.max(0, lp || 0);
+  }
+
+  const divisionMap: Record<string, number> = {
+    IV: 0,
+    III: 100,
+    II: 200,
+    I: 300,
   };
 
-  const rankMap: Record<string, number> = {
-    IV: 1,
-    III: 2,
-    II: 3,
-    I: 4,
-  };
+  const divisionBase = divisionMap[normalizedRank] ?? 0;
 
-  const tierValue = tierMap[(tier || '').toUpperCase()] || 0;
-  const rankValue = rankMap[(rank || '').toUpperCase()] || 0;
-
-  return tierValue * 1000 + rankValue * 100 + (lp || 0);
+  return tierIndex * 400 + divisionBase + Math.max(0, lp || 0);
 }
 
 async function saveRankSnapshots(puuid: string, platform: string) {

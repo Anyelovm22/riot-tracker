@@ -203,6 +203,17 @@ export type SyncAnalyticsPayload = {
   mode?: 'incremental' | 'full_backfill';
 };
 
+export type SyncAnalyticsResponse = {
+  success: boolean;
+  inProgress?: boolean;
+  message?: string;
+  saved?: number;
+  scannedIds?: number;
+  totalPages?: number;
+  nextStart?: number;
+  mode?: string;
+};
+
 export type FetchAnalyticsSummaryParams = {
   puuid: string;
   platform: string;
@@ -219,7 +230,7 @@ export type FetchLpHistoryParams = {
 };
 
 export async function syncAnalyticsMatches(payload: SyncAnalyticsPayload) {
-  const { data } = await api.post('/analytics/sync', payload);
+  const { data } = await api.post<SyncAnalyticsResponse>('/analytics/sync', payload);
   return data;
 }
 

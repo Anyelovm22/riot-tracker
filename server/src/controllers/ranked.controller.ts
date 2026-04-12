@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import {
   getSummonerByPuuid,
   getLeagueEntriesBySummonerId,
+  getLeagueEntriesByPuuid,
 } from '../services/riot.service';
 
 function normalizeLeagueEntries(entries: any[]) {
@@ -41,12 +42,30 @@ export async function getRankedOverview(req: Request, res: Response) {
       });
     }
 
-    const leagueEntries = await getLeagueEntriesBySummonerId(summoner.id, platform);
+    let leagueEntries: any[] = [];
+    let source: 'summonerId' | 'puuid' | 'none' = 'none';
+
+    try {
+      leagueEntries = await getLeagueEntriesBySummonerId(summoner.id, platform);
+      source = 'summonerId';
+    } catch {
+      leagueEntries = [];
+    }
+
+    if (!leagueEntries.length) {
+      try {
+        leagueEntries = await getLeagueEntriesByPuuid(summoner.puuid || puuid, platform);
+        source = 'puuid';
+      } catch {
+        leagueEntries = [];
+      }
+    }
 
     return res.json({
       success: true,
       rankedAvailable: true,
       summoner,
+      source,
       leagueEntries: normalizeLeagueEntries(leagueEntries),
     });
   } catch (error: any) {

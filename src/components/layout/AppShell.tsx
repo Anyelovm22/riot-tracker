@@ -14,11 +14,10 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
-      {/* Subtle gradient glow at top */}
-      <div className="pointer-events-none fixed inset-x-0 top-0 h-[500px] bg-[var(--gradient-glow)]" />
+      <div className="pointer-events-none fixed inset-x-0 top-0 h-[520px] bg-[var(--gradient-glow)]" />
       
       <header className="glass sticky top-0 z-50 border-b border-[var(--border-subtle)]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6">
           <button
             onClick={() => navigate('/')}
             className="group flex items-center gap-2.5"
@@ -33,16 +32,16 @@ export default function AppShell() {
             </span>
           </button>
 
-          <nav className="flex items-center gap-1">
+          <nav className="flex flex-wrap items-center gap-1.5">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                  `group flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-[var(--accent-primary)] text-white shadow-lg shadow-blue-500/20'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
+                      ? 'border-blue-400/30 bg-[var(--accent-primary)] text-white shadow-lg shadow-blue-500/20'
+                      : 'border-transparent text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
                   }`
                 }
               >

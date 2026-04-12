@@ -637,8 +637,8 @@ export default function MetaPage() {
 
   if (!profile?.account?.puuid || !profile?.resolvedPlatform) {
     return (
-      <main className="px-6 py-8">
-        <div className="mx-auto max-w-7xl">
+      <main className="page-shell">
+        <div className="page-container">
           <BackButton />
           <div className="mt-6 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-6 text-yellow-200">
             No se encontró un perfil válido. Vuelve a cargar la cuenta antes de abrir esta vista.
@@ -649,8 +649,8 @@ export default function MetaPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--bg-primary)] px-6 py-8">
-      <div className="mx-auto max-w-7xl">
+    <main className="page-shell">
+      <div className="page-container">
         <BackButton />
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.7fr_0.9fr]">

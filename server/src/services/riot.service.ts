@@ -274,6 +274,16 @@ export async function getMatchById(matchId: string, platform: string) {
   );
 }
 
+export async function getMatchTimelineById(matchId: string, platform: string) {
+  const client = riotClient(getRegionalBase(platform));
+  return riotGetWithRetry<any>(
+    client,
+    `/lol/match/v5/matches/${encodeURIComponent(matchId)}/timeline`,
+    undefined,
+    4
+  );
+}
+
 export async function getLatestDdragonVersion() {
   const { data } = await axios.get(
     'https://ddragon.leagueoflegends.com/api/versions.json',

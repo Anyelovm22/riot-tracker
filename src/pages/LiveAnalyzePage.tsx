@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import BackButton from '../components/common/BackButton';
 import { fetchLiveAnalysis } from '../services/liveAnalysis';
 import type {
@@ -12,6 +12,7 @@ const DDRAGON_VERSION = '15.7.1';
 type RuneMap = Record<number, { id: number; name: string; icon: string }>;
 
 export default function LiveAnalyzePage() {
+  const AUTO_REFRESH_SECONDS = 25;
   const [mode, setMode] = useState<'lane' | 'player' | 'team'>('lane');
   const [targetRiotId, setTargetRiotId] = useState('');
   const [preferredRole, setPreferredRole] = useState<Role>('TOP');
@@ -20,7 +21,20 @@ export default function LiveAnalyzePage() {
   const [runeMap, setRuneMap] = useState<RuneMap>({});
 
   const [loading, setLoading] = useState(true);
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
+  const [refreshCountdown, setRefreshCountdown] = useState(AUTO_REFRESH_SECONDS);
   const [error, setError] = useState('');
+  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+
+  const modeRef = useRef(mode);
+  const targetRef = useRef(targetRiotId);
+  const roleRef = useRef(preferredRole);
+
+  useEffect(() => {
+    modeRef.current = mode;
+    targetRef.current = targetRiotId;
+    roleRef.current = preferredRole;
+  }, [mode, targetRiotId, preferredRole]);
 
   async function loadStaticData() {
     const runeRes = await fetch(
@@ -52,10 +66,15 @@ export default function LiveAnalyzePage() {
   async function loadAnalysis(
     nextMode = mode,
     nextTarget = targetRiotId,
-    nextRole = preferredRole
+    nextRole = preferredRole,
+    options?: { silent?: boolean }
   ) {
     try {
-      setLoading(true);
+      if (options?.silent) {
+        setBackgroundRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError('');
 
       const result = await fetchLiveAnalysis({
@@ -65,6 +84,8 @@ export default function LiveAnalyzePage() {
       });
 
       setData(result);
+      setLastRefreshAt(result.generatedAt || new Date().toISOString());
+      setRefreshCountdown(result.coach?.nextCheckSeconds || AUTO_REFRESH_SECONDS);
     } catch (err: any) {
       setError(
         err?.response?.data?.message ||
@@ -72,7 +93,11 @@ export default function LiveAnalyzePage() {
           'No se pudo cargar el análisis'
       );
     } finally {
-      setLoading(false);
+      if (options?.silent) {
+        setBackgroundRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
@@ -91,6 +116,22 @@ export default function LiveAnalyzePage() {
 
     init();
   }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRefreshCountdown((prev) => {
+        if (prev <= 1) {
+          void loadAnalysis(modeRef.current, targetRef.current, roleRef.current, {
+            silent: true,
+          });
+          return data?.coach?.nextCheckSeconds || AUTO_REFRESH_SECONDS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [data?.coach?.nextCheckSeconds]);
 
   const enemyOptions = useMemo(() => data?.allEnemies || [], [data]);
 
@@ -300,28 +341,43 @@ export default function LiveAnalyzePage() {
   }
 
   return (
-    <main className="relative min-h-screen px-6 py-8">
+    <main className="page-shell">
       <div className="pointer-events-none absolute inset-0 bg-[var(--gradient-glow)]" />
 
-      <div className="relative mx-auto max-w-7xl">
+      <div className="page-container">
         <BackButton />
 
-        <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="mt-6 flex flex-col gap-4 rounded-3xl border border-[var(--border-default)] bg-[linear-gradient(120deg,rgba(59,130,246,0.14),rgba(14,14,14,0.85)_40%,rgba(168,85,247,0.12))] p-6 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">
-              Análisis en Vivo PRO
+              Coach IA en Vivo
             </h1>
             <p className="mt-2 text-sm text-[var(--text-secondary)]">
-              Ajusta tu build según lo que el rival ya mostró y la diferencia real del matchup.
+              Recomendaciones dinámicas de compra, reemplazo y lectura del enemigo en tiempo real.
             </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-full border border-[var(--border-default)] bg-black/30 px-3 py-1 text-[var(--text-secondary)]">
+                Auto-refresh: {refreshCountdown}s
+              </span>
+              {backgroundRefreshing ? (
+                <span className="rounded-full bg-blue-500/20 px-3 py-1 text-blue-200">
+                  Actualizando análisis...
+                </span>
+              ) : null}
+              {lastRefreshAt ? (
+                <span className="rounded-full border border-[var(--border-default)] bg-black/30 px-3 py-1 text-[var(--text-muted)]">
+                  Última lectura: {new Date(lastRefreshAt).toLocaleTimeString()}
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <button
-            onClick={() => loadAnalysis(mode, targetRiotId, preferredRole)}
+            onClick={() => loadAnalysis(mode, targetRiotId, preferredRole, { silent: true })}
             disabled={loading}
             className="rounded-xl bg-[var(--accent-primary)] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[var(--accent-primary-hover)] disabled:opacity-50"
           >
-            {loading ? 'Analizando...' : 'Refrescar'}
+            {loading ? 'Analizando...' : 'Refrescar ahora'}
           </button>
         </div>
 
@@ -410,6 +466,50 @@ export default function LiveAnalyzePage() {
         {!loading && !error && data && (
           <div className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-6">
+              <div className="rounded-3xl border border-blue-400/20 bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-6 shadow-xl">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                    Coach en tiempo real
+                  </h2>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${
+                      data.coach?.status === 'ahead'
+                        ? 'bg-emerald-500/20 text-emerald-200'
+                        : data.coach?.status === 'behind'
+                        ? 'bg-red-500/20 text-red-200'
+                        : 'bg-yellow-500/20 text-yellow-200'
+                    }`}
+                  >
+                    {data.coach?.status === 'ahead'
+                      ? 'Ventaja'
+                      : data.coach?.status === 'behind'
+                      ? 'Desventaja'
+                      : 'Parejo'}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl bg-[var(--bg-elevated)] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Ahora mismo</p>
+                    <ul className="mt-2 space-y-1.5 text-sm text-[var(--text-secondary)]">
+                      {(data.coach?.now || []).map((tip, idx) => (
+                        <li key={idx}>• {tip}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-2xl bg-[var(--bg-elevated)] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Siguiente compra</p>
+                    <ul className="mt-2 space-y-1.5 text-sm text-[var(--text-secondary)]">
+                      {(data.coach?.nextBuy || []).length ? (
+                        (data.coach?.nextBuy || []).map((tip, idx) => <li key={idx}>• {tip}</li>)
+                      ) : (
+                        <li>• Sin compra forzada todavía: espera más información.</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-xl">
                 <h2 className="text-lg font-semibold text-[var(--text-primary)]">
                   Tu campeón
@@ -644,6 +744,31 @@ export default function LiveAnalyzePage() {
 
                   <div className="rounded-2xl bg-[var(--bg-elevated)] p-4">
                     <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                      Items que están decayendo
+                    </h3>
+                    {data.buildAdvice?.decayCandidates?.length ? (
+                      <div className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
+                        {data.buildAdvice.decayCandidates.map((item, index) => (
+                          <div
+                            key={`${item.item}-${index}`}
+                            className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3"
+                          >
+                            <p className="font-medium text-[var(--text-primary)]">
+                              {item.item} <span className="text-xs text-[var(--text-muted)]">(slot {item.slot})</span>
+                            </p>
+                            <p className="text-sm text-[var(--text-secondary)]">{item.reason}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm text-[var(--text-secondary)]">
+                        Tu inventario aún mantiene buen valor situacional.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl bg-[var(--bg-elevated)] p-4">
+                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">
                       Reemplazos sugeridos
                     </h3>
                     {data.buildAdvice?.replaceSuggestions?.length ? (
@@ -687,6 +812,19 @@ export default function LiveAnalyzePage() {
                       </h3>
                       <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
                         {data.buildAdvice.fullBuildTips.map((tip, index) => (
+                          <li key={index}>• {tip}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {!!data.coach?.watchEnemy?.length && (
+                    <div className="rounded-2xl bg-[var(--bg-elevated)] p-4">
+                      <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                        Qué está mostrando el enemigo
+                      </h3>
+                      <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
+                        {data.coach.watchEnemy.map((tip, index) => (
                           <li key={index}>• {tip}</li>
                         ))}
                       </ul>

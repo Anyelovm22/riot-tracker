@@ -128,7 +128,22 @@ type BuildAdvice = {
     reason: string;
   }>;
   replaceSuggestions: ReplaceSuggestion[];
+  decayCandidates: Array<{
+    item: string;
+    slot: number;
+    reason: string;
+    urgency: 'alta' | 'media' | 'baja';
+  }>;
   fullBuildTips: string[];
+};
+
+type LiveCoach = {
+  status: 'ahead' | 'even' | 'behind';
+  now: string[];
+  nextBuy: string[];
+  replaceNow: string[];
+  watchEnemy: string[];
+  nextCheckSeconds: number;
 };
 
 const ITEM_DB = {
@@ -1308,6 +1323,64 @@ function getSellCandidates(items: LiveItem[] = []) {
   return candidates.slice(0, 3);
 }
 
+function getDecayCandidates(
+  me: LivePlayer,
+  enemy: LivePlayer | null,
+  comparison: MatchupComparison | null
+) {
+  const items = me.items || [];
+  const isBehind = (comparison?.diff.gold ?? 0) <= -700 || (comparison?.diff.level ?? 0) < 0;
+  const enemySignals = enemy ? detectEnemySignals(enemy) : [];
+
+  const candidates = items
+    .filter((item) => item.itemID)
+    .flatMap((item) => {
+      const name = normalizeText(item.displayName);
+
+      if (name.includes('doran') || name.includes('cull')) {
+        return [
+          {
+            item: item.displayName,
+            slot: item.slot,
+            reason: 'Item de early game: ya no escala tan bien para peleas de mid/late.',
+            urgency: 'media' as const,
+          },
+        ];
+      }
+
+      if ((name.includes('potion') || name.includes('galleta')) && items.length >= 4) {
+        return [
+          {
+            item: item.displayName,
+            slot: item.slot,
+            reason: 'Valor bajo en este momento; mejor convertir ese slot en spike real.',
+            urgency: 'alta' as const,
+          },
+        ];
+      }
+
+      if (name.includes('executioner') || name.includes('oblivion orb')) {
+        const enemyHasSustain = enemySignals.some((signal) =>
+          ['ap_sustain', 'anti_hp_duelist'].includes(signal.tag)
+        );
+        if (!enemyHasSustain && !isBehind) {
+          return [
+            {
+              item: item.displayName,
+              slot: item.slot,
+              reason: 'El rival no está mostrando tanta curación; este slot puede rendir más en stats directos.',
+              urgency: 'media' as const,
+            },
+          ];
+        }
+      }
+
+      return [];
+    });
+
+  return candidates.slice(0, 3);
+}
+
 function getNextOwnedCounterUpgrade(me: LivePlayer, enemy: LivePlayer | null): ReplaceSuggestion[] {
   if (!enemy) return [];
 
@@ -1460,7 +1533,50 @@ function buildBuildAdvice(
   return {
     sellCandidates,
     replaceSuggestions: replaceSuggestions.slice(0, 4),
+    decayCandidates: [],
     fullBuildTips,
+  };
+}
+
+function buildLiveCoach(
+  me: LivePlayer,
+  enemy: LivePlayer | null,
+  comparison: MatchupComparison | null,
+  buildAdvice: BuildAdvice
+): LiveCoach {
+  const status: LiveCoach['status'] =
+    (comparison?.diff.gold ?? 0) >= 700 || (comparison?.diff.level ?? 0) > 0
+      ? 'ahead'
+      : (comparison?.diff.gold ?? 0) <= -700 || (comparison?.diff.level ?? 0) < 0
+      ? 'behind'
+      : 'even';
+
+  const watchEnemy = (enemy ? detectEnemySignals(enemy) : [])
+    .slice(0, 3)
+    .map((signal) => `${signal.sourceItem}: ${signal.summary}`);
+
+  const nextBuy = buildAdvice.replaceSuggestions
+    .slice(0, 2)
+    .map((entry) => `Cambia ${entry.sell} por ${entry.buy} (${entry.reason})`);
+
+  const replaceNow = buildAdvice.decayCandidates
+    .slice(0, 2)
+    .map((entry) => `${entry.item}: ${entry.reason}`);
+
+  const now: string[] = [];
+
+  if ((comparison?.diff.cs ?? 0) <= -10) now.push('Prioriza farm seguro 60-90s antes de forzar pelea.');
+  if ((comparison?.diff.vision ?? 0) < -6) now.push('Juega con visión defensiva y evita zonas oscuras.');
+  if ((comparison?.diff.level ?? 0) > 0) now.push('Tienes ventana por nivel: busca trade corto o presión de objetivo.');
+  if (!now.length) now.push('Mantén presión estable y espera mostrar más items enemigos para ajustar el spike.');
+
+  return {
+    status,
+    now: now.slice(0, 3),
+    nextBuy,
+    replaceNow,
+    watchEnemy,
+    nextCheckSeconds: 25,
   };
 }
 
@@ -1617,19 +1733,23 @@ export async function getLiveAnalysis(req: Request, res: Response) {
     const primarySignals = primaryTarget ? detectEnemySignals(primaryTarget) : [];
     const recommendations = buildProRecommendations(me, primaryTarget, comparisons[0] || null);
 
+    const initialBuildAdvice = buildBuildAdvice(me, primaryTarget);
     const sellCandidates = getSellCandidates(me.items || []);
-    const replaceSuggestions = buildBuildAdvice(me, primaryTarget).replaceSuggestions;
+    const replaceSuggestions = initialBuildAdvice.replaceSuggestions;
+    const decayCandidates = getDecayCandidates(me, primaryTarget, comparisons[0] || null);
 
     const buildAdvice: BuildAdvice = {
       sellCandidates,
       replaceSuggestions,
+      decayCandidates,
       fullBuildTips: [
         'Refresca el análisis si el rival enseña nuevos items.',
         'El counter se basa en lo que el enemigo ya mostró, no en una build inventada.',
         'Mientras más piezas de build se vean, más preciso será el análisis.',
-        ...buildBuildAdvice(me, primaryTarget).fullBuildTips,
+        ...initialBuildAdvice.fullBuildTips,
       ],
     };
+    const coach = buildLiveCoach(me, primaryTarget, comparisons[0] || null, buildAdvice);
 
     return res.json({
       mode,
@@ -1653,6 +1773,8 @@ export async function getLiveAnalysis(req: Request, res: Response) {
       matchupComparisons: comparisons,
       adaptiveTips: buildAdaptiveTips(me, primaryTarget, comparisons[0] || null),
       buildAdvice,
+      coach,
+      generatedAt: new Date().toISOString(),
     });
   } catch (error: any) {
     console.error('LIVE ANALYSIS ERROR:', error?.message || error);

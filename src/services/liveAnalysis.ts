@@ -118,7 +118,22 @@ export type BuildAdvice = {
     buyItemId?: number;
     reason: string;
   }>;
+  decayCandidates: Array<{
+    item: string;
+    slot: number;
+    reason: string;
+    urgency: 'alta' | 'media' | 'baja';
+  }>;
   fullBuildTips: string[];
+};
+
+export type LiveCoach = {
+  status: 'ahead' | 'even' | 'behind';
+  now: string[];
+  nextBuy: string[];
+  replaceNow: string[];
+  watchEnemy: string[];
+  nextCheckSeconds: number;
 };
 
 export type LiveAnalysisResponse = {
@@ -143,6 +158,8 @@ export type LiveAnalysisResponse = {
   matchupComparisons: MatchupComparison[];
   adaptiveTips: string[];
   buildAdvice: BuildAdvice;
+  coach: LiveCoach;
+  generatedAt: string;
 };
 
 export async function fetchLiveAnalysis(params: {

@@ -5,6 +5,7 @@ import { fetchMatchHistory } from '../services/matches';
 import { readStoredProfile } from '../utils/profileStorage';
 import { readCache, readCacheMeta, saveCache } from '../utils/appCache';
 import { getApiErrorMessage } from '../utils/httpError';
+import { getChampionIconUrl, getItemIconUrl, getLatestDdragonVersion } from '../utils/ddragonVersion';
 
 type QueueFilter = 'ALL' | 'RANKED_SOLO' | 'RANKED_FLEX' | 'NORMALS' | 'ARAM';
 
@@ -60,6 +61,7 @@ export default function MatchupPage() {
   const cacheMeta = readCacheMeta('matches');
 
   const [matches, setMatches] = useState<MatchItem[]>(cached?.matches || []);
+  const [ddragonVersion, setDdragonVersion] = useState('15.7.1');
   const [filter, setFilter] = useState<QueueFilter>('ALL');
   const [loading, setLoading] = useState(!cached);
   const [refreshing, setRefreshing] = useState(false);
@@ -92,10 +94,14 @@ export default function MatchupPage() {
   }
 
   useEffect(() => {
+    getLatestDdragonVersion().then(setDdragonVersion);
+  }, []);
+
+  useEffect(() => {
     if (!cached) {
       loadMatches(false);
     }
-  }, []);
+  }, [ddragonVersion]);
 
   const filteredMatches = useMemo(() => {
     if (filter === 'ALL') return matches;
@@ -110,31 +116,30 @@ export default function MatchupPage() {
   }, [matches, filter]);
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
+    <main className="page-shell">
+      <div className="page-container">
         <BackButton />
 
-        <div className="mt-4 flex flex-col gap-2">
-          <h1 className="text-3xl font-bold text-white">Historial completo</h1>
-          <p className="text-zinc-400">
+        <div className="mt-4 rounded-3xl border border-[var(--border-default)] bg-[linear-gradient(120deg,rgba(59,130,246,0.14),rgba(14,14,14,0.85)_40%,rgba(168,85,247,0.12))] p-6">
+          <h1 className="text-3xl font-bold text-[var(--text-primary)]">Historial completo</h1>
+          <p className="mt-2 text-[var(--text-secondary)]">
             Todas las partidas recientes en una sola vista, con filtros por cola.
           </p>
-        </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => loadMatches(true)}
+              disabled={refreshing}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+            >
+              {refreshing ? 'Refrescando...' : 'Refrescar historial'}
+            </button>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => loadMatches(true)}
-            disabled={refreshing}
-            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
-          >
-            {refreshing ? 'Refrescando...' : 'Refrescar historial'}
-          </button>
-
-          {cacheMeta?.savedAt ? (
-            <span className="text-sm text-zinc-500">
-              Última carga: {new Date(cacheMeta.savedAt).toLocaleString()}
-            </span>
-          ) : null}
+            {cacheMeta?.savedAt ? (
+              <span className="text-sm text-[var(--text-muted)]">
+                Última carga: {new Date(cacheMeta.savedAt).toLocaleString()}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
@@ -148,8 +153,8 @@ export default function MatchupPage() {
             <button
               key={value}
               onClick={() => setFilter(value as QueueFilter)}
-              className={`rounded-xl px-4 py-2 text-white transition ${
-                filter === value ? 'bg-blue-600' : 'bg-zinc-800 hover:bg-zinc-700'
+              className={`rounded-xl px-4 py-2 text-sm font-medium text-white transition ${
+                filter === value ? 'bg-blue-600 shadow-lg shadow-blue-500/20' : 'bg-zinc-800 hover:bg-zinc-700'
               }`}
             >
               {label}
@@ -179,7 +184,7 @@ export default function MatchupPage() {
                 return (
                   <div
                     key={match.matchId}
-                    className={`rounded-2xl border p-4 ${
+                    className={`rounded-2xl border p-4 shadow-lg ${
                       win
                         ? 'border-emerald-500/20 bg-emerald-500/5'
                         : 'border-red-500/20 bg-red-500/5'
@@ -194,9 +199,9 @@ export default function MatchupPage() {
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="flex gap-4">
                         <div className="shrink-0">
-                          {player?.championIcon ? (
+                          {player?.championIcon || player?.championName ? (
                             <img
-                              src={player.championIcon}
+                              src={player.championIcon || getChampionIconUrl(ddragonVersion, player?.championName)}
                               alt={player.championName}
                               className="h-16 w-16 rounded-2xl border border-zinc-700 object-cover"
                             />
@@ -233,10 +238,10 @@ export default function MatchupPage() {
 
                           <div className="mt-3 flex flex-wrap gap-2">
                             {player?.items?.map((item, idx) =>
-                              item?.icon ? (
+                              item?.icon || item?.id ? (
                                 <img
                                   key={`${match.matchId}-${idx}`}
-                                  src={item.icon}
+                                  src={item.icon || getItemIconUrl(ddragonVersion, item?.id)}
                                   alt={`Item ${item.id}`}
                                   className="h-10 w-10 rounded-lg border border-zinc-700 bg-zinc-900"
                                 />
@@ -253,8 +258,8 @@ export default function MatchupPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-                        <div>
+                      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                        <div className="rounded-xl bg-black/20 p-3">
                           <p className="text-xs uppercase tracking-wide text-zinc-500">KDA</p>
                           <p className="text-sm font-semibold text-white">
                             {player?.kills}/{player?.deaths}/{player?.assists}
@@ -264,26 +269,26 @@ export default function MatchupPage() {
                           </p>
                         </div>
 
-                        <div>
+                        <div className="rounded-xl bg-black/20 p-3">
                           <p className="text-xs uppercase tracking-wide text-zinc-500">CS</p>
                           <p className="text-sm font-semibold text-white">{getCs(player)}</p>
                         </div>
 
-                        <div>
+                        <div className="rounded-xl bg-black/20 p-3">
                           <p className="text-xs uppercase tracking-wide text-zinc-500">Damage</p>
                           <p className="text-sm font-semibold text-white">
                             {player?.totalDamageDealtToChampions || 0}
                           </p>
                         </div>
 
-                        <div>
+                        <div className="rounded-xl bg-black/20 p-3">
                           <p className="text-xs uppercase tracking-wide text-zinc-500">Gold</p>
                           <p className="text-sm font-semibold text-white">
                             {player?.goldEarned || 0}
                           </p>
                         </div>
 
-                        <div>
+                        <div className="rounded-xl bg-black/20 p-3">
                           <p className="text-xs uppercase tracking-wide text-zinc-500">Role</p>
                           <p className="text-sm font-semibold text-white">
                             {player?.individualPosition || 'Unknown'}

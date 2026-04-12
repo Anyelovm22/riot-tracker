@@ -127,7 +127,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="relative min-h-screen">
+    <main className="page-shell px-0 py-0 md:px-0 md:py-0">
       {/* Background effects */}
       <div className="pointer-events-none absolute inset-0 bg-[var(--gradient-glow)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_rgba(139,92,246,0.1),_transparent_50%)]" />

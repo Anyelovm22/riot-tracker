@@ -110,8 +110,8 @@ export default function MatchupPage() {
   }, [matches, filter]);
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
+    <main className="page-shell">
+      <div className="page-container">
         <BackButton />
 
         <div className="mt-4 flex flex-col gap-2">

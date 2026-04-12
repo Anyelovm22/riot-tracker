@@ -36,10 +36,10 @@ export default function BuilderPage() {
   }
 
   return (
-    <main className="relative min-h-screen px-6 py-8">
+    <main className="page-shell">
       <div className="pointer-events-none absolute inset-0 bg-[var(--gradient-glow)]" />
       
-      <div className="relative mx-auto max-w-7xl">
+      <div className="page-container">
         <BackButton />
 
         {/* Header */}

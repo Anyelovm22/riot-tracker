@@ -91,8 +91,8 @@ export default function MatchDetailPage() {
   }
 
   return (
-    <main className="min-h-screen px-6 py-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <main className="page-shell">
+      <div className="page-container space-y-6">
         <BackButton />
         <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Detalle de Partida</h1>
 

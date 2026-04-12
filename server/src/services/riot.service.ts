@@ -51,28 +51,79 @@ function riotClient(baseURL: string) {
   });
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(value?: string) {
+  if (!value) return 0;
+
+  const seconds = Number(value);
+  if (!Number.isNaN(seconds) && seconds > 0) {
+    return Math.ceil(seconds * 1000);
+  }
+
+  const date = new Date(value).getTime();
+  if (!Number.isNaN(date)) {
+    return Math.max(0, date - Date.now());
+  }
+
+  return 0;
+}
+
+async function riotGetWithRetry<T>(
+  client: ReturnType<typeof riotClient>,
+  url: string,
+  config?: Record<string, any>,
+  retries = 4
+) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const response = await client.get<T>(url, config);
+      return response.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const retryAfterHeader = error?.response?.headers?.['retry-after'];
+      const retryAfterMs = parseRetryAfterMs(retryAfterHeader);
+      const isRetriable = status === 429 || status >= 500;
+
+      if (!isRetriable || attempt >= retries - 1) {
+        throw error;
+      }
+
+      const baseDelay = status === 429 ? 1600 : 900;
+      const backoff = baseDelay * Math.pow(2, attempt);
+      const jitter = Math.floor(Math.random() * 450);
+
+      await sleep(Math.max(retryAfterMs, backoff + jitter));
+    }
+  }
+
+  throw new Error('Retry attempts exhausted');
+}
+
 export async function getAccountByRiotId(
   gameName: string,
   tagLine: string,
   platform: string
 ) {
   const client = riotClient(getRegionalBase(platform));
-
-  const { data } = await client.get(
-    `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`
+  return riotGetWithRetry<any>(
+    client,
+    `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`,
+    undefined,
+    4
   );
-
-  return data;
 }
 
 export async function getSummonerByPuuid(puuid: string, platform: string) {
   const client = riotClient(getPlatformBase(platform));
-
-  const { data } = await client.get(
-    `/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(puuid)}`
+  return riotGetWithRetry<any>(
+    client,
+    `/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(puuid)}`,
+    undefined,
+    4
   );
-
-  return data;
 }
 
 export async function getLeagueEntriesBySummonerId(
@@ -80,12 +131,22 @@ export async function getLeagueEntriesBySummonerId(
   platform: string
 ) {
   const client = riotClient(getPlatformBase(platform));
-
-  const { data } = await client.get(
-    `/lol/league/v4/entries/by-summoner/${encodeURIComponent(summonerId)}`
+  return riotGetWithRetry<any[]>(
+    client,
+    `/lol/league/v4/entries/by-summoner/${encodeURIComponent(summonerId)}`,
+    undefined,
+    4
   );
+}
 
-  return data;
+export async function getLeagueEntriesByPuuid(puuid: string, platform: string) {
+  const client = riotClient(getPlatformBase(platform));
+  return riotGetWithRetry<any[]>(
+    client,
+    `/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`,
+    undefined,
+    4
+  );
 }
 
 export async function getActiveGameBySummonerId(
@@ -93,12 +154,12 @@ export async function getActiveGameBySummonerId(
   platform: string
 ) {
   const client = riotClient(getPlatformBase(platform));
-
-  const { data } = await client.get(
-    `/lol/spectator/v5/active-games/by-summoner/${encodeURIComponent(summonerId)}`
+  return riotGetWithRetry<any>(
+    client,
+    `/lol/spectator/v5/active-games/by-summoner/${encodeURIComponent(summonerId)}`,
+    undefined,
+    3
   );
-
-  return data;
 }
 
 /**
@@ -111,12 +172,12 @@ export async function getActiveGameByPuuid(
   platform: string
 ) {
   const client = riotClient(getPlatformBase(platform));
-
-  const { data } = await client.get(
-    `/lol/spectator/v5/active-games/by-summoner/${encodeURIComponent(puuid)}`
+  return riotGetWithRetry<any>(
+    client,
+    `/lol/spectator/v5/active-games/by-summoner/${encodeURIComponent(puuid)}`,
+    undefined,
+    3
   );
-
-  return data;
 }
 
 export async function getLiveGameSmart(puuid: string, platform: string) {
@@ -195,22 +256,22 @@ export async function getMatchIdsByPuuid(
   if (startTime) params.startTime = startTime;
   if (endTime) params.endTime = endTime;
 
-  const { data } = await client.get(
+  return riotGetWithRetry<string[]>(
+    client,
     `/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids`,
-    { params }
+    { params },
+    5
   );
-
-  return data;
 }
 
 export async function getMatchById(matchId: string, platform: string) {
   const client = riotClient(getRegionalBase(platform));
-
-  const { data } = await client.get(
-    `/lol/match/v5/matches/${encodeURIComponent(matchId)}`
+  return riotGetWithRetry<any>(
+    client,
+    `/lol/match/v5/matches/${encodeURIComponent(matchId)}`,
+    undefined,
+    5
   );
-
-  return data;
 }
 
 export async function getLatestDdragonVersion() {

@@ -32,26 +32,27 @@ function sleep(ms: number) {
 }
 
 async function getRankedMatchIds(puuid: string, platform: string, hardLimit = 20) {
-  const batchSize = 10;
+  const batchSize = 20;
   let start = 0;
-  let rankedIds: string[] = [];
+  let candidateIds: string[] = [];
+  const maxScan = Math.max(hardLimit * 4, 40);
 
-  while (rankedIds.length < hardLimit) {
-    const remaining = hardLimit - rankedIds.length;
+  while (candidateIds.length < maxScan) {
+    const remaining = maxScan - candidateIds.length;
     const currentBatch = Math.min(batchSize, remaining);
 
     const ids = await getMatchIdsByPuuid(puuid, platform, currentBatch, start);
     if (!ids.length) break;
 
-    rankedIds = rankedIds.concat(ids);
+    candidateIds = candidateIds.concat(ids);
 
     if (ids.length < currentBatch) break;
 
     start += currentBatch;
-    await sleep(900);
+    await sleep(650);
   }
 
-  return rankedIds;
+  return candidateIds;
 }
 
 async function fetchMatchesSafely(matchIds: string[], platform: string) {
@@ -165,7 +166,7 @@ export async function getMatchHistory(req: Request, res: Response) {
       normalized = normalized.filter((match) => match.queueId === queueId);
     }
 
-    normalized.sort((a, b) => a.gameCreation - b.gameCreation);
+    normalized.sort((a, b) => b.gameCreation - a.gameCreation);
 
     return res.json({
       version,
@@ -181,5 +182,67 @@ export async function getMatchHistory(req: Request, res: Response) {
     });
   } finally {
     activeHistoryRequests.delete(requestKey);
+  }
+}
+
+export async function getMatchDetail(req: Request, res: Response) {
+  const matchId = String(req.params.matchId || '').trim();
+  const puuid = String(req.query.puuid || '').trim();
+  const platform = String(req.query.platform || 'la1').trim().toLowerCase();
+
+  if (!matchId || !puuid) {
+    return res.status(400).json({ message: 'matchId and puuid are required' });
+  }
+
+  try {
+    const match = await getMatchById(matchId, platform);
+    const version = await getLatestDdragonVersion();
+    const player = match?.info?.participants?.find((p: any) => p.puuid === puuid) || null;
+
+    const participants = (match?.info?.participants || []).map((p: any) => ({
+      puuid: p.puuid,
+      riotIdGameName: p.riotIdGameName || '',
+      riotIdTagline: p.riotIdTagline || '',
+      summonerName: p.summonerName || '',
+      championName: p.championName,
+      championIcon: champIcon(version, p.championName),
+      teamId: p.teamId,
+      kills: p.kills,
+      deaths: p.deaths,
+      assists: p.assists,
+      win: p.win,
+      totalDamageDealtToChampions: p.totalDamageDealtToChampions,
+      totalDamageTaken: p.totalDamageTaken,
+      visionScore: p.visionScore,
+      goldEarned: p.goldEarned,
+      totalMinionsKilled: p.totalMinionsKilled,
+      neutralMinionsKilled: p.neutralMinionsKilled,
+      individualPosition: p.individualPosition,
+      items: [
+        { id: p.item0, icon: itemIcon(version, p.item0) },
+        { id: p.item1, icon: itemIcon(version, p.item1) },
+        { id: p.item2, icon: itemIcon(version, p.item2) },
+        { id: p.item3, icon: itemIcon(version, p.item3) },
+        { id: p.item4, icon: itemIcon(version, p.item4) },
+        { id: p.item5, icon: itemIcon(version, p.item5) },
+        { id: p.item6, icon: itemIcon(version, p.item6) },
+      ],
+    }));
+
+    return res.json({
+      matchId: match.metadata.matchId,
+      gameCreation: match.info.gameCreation,
+      gameDuration: match.info.gameDuration,
+      queueId: match.info.queueId,
+      queueLabel: queueLabels[match.info.queueId] || `Queue ${match.info.queueId}`,
+      playerPuuid: puuid,
+      player,
+      participants,
+    });
+  } catch (error: any) {
+    return res.status(error?.response?.status || 500).json({
+      message: 'Error fetching match detail',
+      detail: error?.response?.data || null,
+    });
   }
 }

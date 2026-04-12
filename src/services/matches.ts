@@ -10,3 +10,15 @@ export async function fetchMatchHistory(params: {
   const { data } = await api.get('/matches/history', { params });
   return data;
 }
+
+export async function fetchMatchDetail(params: {
+  matchId: string;
+  puuid: string;
+  platform: string;
+}) {
+  const { matchId, ...query } = params;
+  const { data } = await api.get(`/matches/${encodeURIComponent(matchId)}/detail`, {
+    params: query,
+  });
+  return data;
+}

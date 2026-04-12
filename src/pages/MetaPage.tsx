@@ -64,11 +64,6 @@ function localDateAtEndOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
 }
 
-function formatDate(date?: string | null) {
-  if (!date) return '-';
-  return new Date(date).toLocaleDateString();
-}
-
 function formatLocalDate(date: Date) {
   return date.toLocaleDateString();
 }
@@ -419,7 +414,7 @@ export default function MetaPage() {
   const seasonOptions = useMemo(() => buildSeasonOptions(today), [today]);
   const defaultSeason = useMemo(() => resolveCurrentSeason(seasonOptions, today), [seasonOptions, today]);
 
-  const [selectedQueue, setSelectedQueue] = useState<QueueMode>('all');
+  const [selectedQueue, setSelectedQueue] = useState<QueueMode>('solo');
   const [lpQueue, setLpQueue] = useState<LpQueueMode>('solo');
   const [selectedView, setSelectedView] = useState<ViewMode>('summary');
   const [selectedSeasonKey, setSelectedSeasonKey] = useState<string>(defaultSeason?.key || '');
@@ -545,16 +540,33 @@ export default function MetaPage() {
     loadLpHistory(lpQueue);
   }, [lpQueue]);
 
-  const sample = analyticsResponse?.sample || null;
   const data = analyticsResponse?.analytics || null;
   const officialRecord = analyticsResponse?.officialRecord || null;
   const cacheCoverage = analyticsResponse?.cacheCoverage || null;
   const rankedEntries = analyticsResponse?.ranked?.leagueEntries || [];
+  const soloRecord = useMemo(
+    () => rankedEntries.find((entry) => entry.queueType === 'RANKED_SOLO_5x5') || null,
+    [rankedEntries]
+  );
+  const flexRecord = useMemo(
+    () => rankedEntries.find((entry) => entry.queueType === 'RANKED_FLEX_SR') || null,
+    [rankedEntries]
+  );
 
   const lpRankedEntry = useMemo(() => {
     const queueType = lpQueue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
     return rankedEntries.find((entry) => entry.queueType === queueType) || null;
   }, [rankedEntries, lpQueue]);
+  const lpChanges = useMemo(() => {
+    return lpHistory.reduce(
+      (acc, point) => {
+        if (point.lpChange > 0) acc.gained += point.lpChange;
+        if (point.lpChange < 0) acc.lost += Math.abs(point.lpChange);
+        return acc;
+      },
+      { gained: 0, lost: 0 }
+    );
+  }, [lpHistory]);
 
   const scoreTone =
     !data ? 'default' : data.summary.winRate >= 55 ? 'good' : data.summary.winRate >= 50 ? 'warn' : 'bad';
@@ -619,7 +631,7 @@ export default function MetaPage() {
               {data ? <ScoreBadge score={data.performanceScore} /> : null}
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="mt-6 grid gap-4 md:grid-cols-4">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
                 <div className="text-xs font-medium text-[var(--text-muted)]">Rango oficial actual</div>
                 {officialRecord ? (
@@ -633,6 +645,37 @@ export default function MetaPage() {
                   </>
                 ) : (
                   <div className="mt-3 text-sm text-[var(--text-muted)]">No disponible para esta cola.</div>
+                )}
+              </div>
+              <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
+                <div className="text-xs font-medium text-[var(--text-muted)]">SoloQ actual</div>
+                {soloRecord ? (
+                  <>
+                    <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
+                      {soloRecord.tier} {soloRecord.rank}
+                    </div>
+                    <div className="mt-2 text-sm text-[var(--text-secondary)]">
+                      {soloRecord.leaguePoints} LP · {soloRecord.wins}W / {soloRecord.losses}L
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">Sin datos de SoloQ.</div>
+                )}
+              </div>
+
+              <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
+                <div className="text-xs font-medium text-[var(--text-muted)]">Flex actual</div>
+                {flexRecord ? (
+                  <>
+                    <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
+                      {flexRecord.tier} {flexRecord.rank}
+                    </div>
+                    <div className="mt-2 text-sm text-[var(--text-secondary)]">
+                      {flexRecord.leaguePoints} LP · {flexRecord.wins}W / {flexRecord.losses}L
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">Sin datos de Flex.</div>
                 )}
               </div>
 
@@ -1099,7 +1142,7 @@ export default function MetaPage() {
                   )}
                 </div>
 
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <StatCard
                     label="LP actual"
                     value={lpHistory.length ? lpHistory[lpHistory.length - 1].leaguePoints : '-'}
@@ -1112,6 +1155,18 @@ export default function MetaPage() {
                         : '-'
                     }
                     tone="info"
+                  />
+                  <StatCard
+                    label="LP ganado"
+                    value={`+${lpChanges.gained}`}
+                    helper="Suma de subidas entre snapshots"
+                    tone="good"
+                  />
+                  <StatCard
+                    label="LP perdido"
+                    value={`-${lpChanges.lost}`}
+                    helper="Suma de bajadas entre snapshots"
+                    tone="bad"
                   />
                   <StatCard
                     label="Snapshots"

@@ -159,6 +159,10 @@ export type AnalyticsSummaryResponse = {
     to: string | null;
   };
   analytics: AnalyticsData | null;
+  queueAnalytics?: {
+    solo: AnalyticsData;
+    flex: AnalyticsData;
+  };
 };
 
 export type LpHistoryPoint = {
@@ -170,6 +174,11 @@ export type LpHistoryPoint = {
   wins: number;
   losses: number;
   lpChange: number;
+  lpGain?: number;
+  lpLoss?: number;
+  winsDelta?: number;
+  lossesDelta?: number;
+  matchesDelta?: number;
   rankValue: number;
 };
 
@@ -178,6 +187,13 @@ export type LpHistoryResponse = {
   queueType: string;
   totalSnapshots: number;
   points: LpHistoryPoint[];
+  totals?: {
+    lpGained: number;
+    lpLost: number;
+    netLp: number;
+    winsDetected: number;
+    lossesDetected: number;
+  };
 };
 
 export type SyncAnalyticsPayload = {

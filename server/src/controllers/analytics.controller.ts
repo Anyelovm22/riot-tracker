@@ -892,6 +892,12 @@ function normalizeLeagueEntries(entries: any[]) {
   }));
 }
 
+function getQueueTypeFromQueueId(queueId: number) {
+  if (queueId === queueMap.solo) return 'RANKED_SOLO_5x5';
+  if (queueId === queueMap.flex) return 'RANKED_FLEX_SR';
+  return null;
+}
+
 function rankToNumber(tier: string, rank: string, lp: number) {
   const tierMap: Record<string, number> = {
     IRON: 1,
@@ -1242,6 +1248,14 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
     };
 
     const analytics = rows.length ? buildQueueAnalytics(rows as MatchLike[]) : null;
+    const queueAnalytics = {
+      solo: buildQueueAnalytics(
+        rows.filter((row) => row.queueId === queueMap.solo) as MatchLike[]
+      ),
+      flex: buildQueueAnalytics(
+        rows.filter((row) => row.queueId === queueMap.flex) as MatchLike[]
+      ),
+    };
 
     return res.json({
       success: true,
@@ -1265,6 +1279,7 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
           : null,
       sample,
       analytics,
+      queueAnalytics,
     });
   } catch (error: any) {
     return res.status(500).json({
@@ -1308,14 +1323,18 @@ export async function getLpHistory(req: Request, res: Response) {
       const previous = index > 0 ? snapshots[index - 1] : null;
 
       let lpChange = 0;
+      let winsDelta = 0;
+      let lossesDelta = 0;
       if (previous) {
         const prevValue = rankToNumber(previous.tier, previous.rank, previous.leaguePoints);
         const currentValue = rankToNumber(item.tier, item.rank, item.leaguePoints);
         lpChange = currentValue - prevValue;
+        winsDelta = Math.max(0, item.wins - previous.wins);
+        lossesDelta = Math.max(0, item.losses - previous.losses);
       }
 
       return {
-        label: new Date(item.snapshotAt).toLocaleDateString(),
+        label: new Date(item.snapshotAt).toLocaleString(),
         snapshotAt: item.snapshotAt,
         tier: item.tier,
         rank: item.rank,
@@ -1323,15 +1342,33 @@ export async function getLpHistory(req: Request, res: Response) {
         wins: item.wins,
         losses: item.losses,
         lpChange,
+        lpGain: lpChange > 0 ? lpChange : 0,
+        lpLoss: lpChange < 0 ? Math.abs(lpChange) : 0,
+        winsDelta,
+        lossesDelta,
+        matchesDelta: winsDelta + lossesDelta,
         rankValue: rankToNumber(item.tier, item.rank, item.leaguePoints),
+        queueType: getQueueTypeFromQueueId(queue === 'solo' ? queueMap.solo : queueMap.flex),
       };
     });
+
+    const lpGained = points.reduce((sum, point) => sum + point.lpGain, 0);
+    const lpLost = points.reduce((sum, point) => sum + point.lpLoss, 0);
+    const winsDetected = points.reduce((sum, point) => sum + point.winsDelta, 0);
+    const lossesDetected = points.reduce((sum, point) => sum + point.lossesDelta, 0);
 
     return res.json({
       success: true,
       queueType,
       totalSnapshots: snapshots.length,
       points,
+      totals: {
+        lpGained,
+        lpLost,
+        netLp: lpGained - lpLost,
+        winsDetected,
+        lossesDetected,
+      },
     });
   } catch (error: any) {
     return res.status(500).json({

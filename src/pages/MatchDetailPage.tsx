@@ -91,23 +91,23 @@ export default function MatchDetailPage() {
   }
 
   return (
-    <main className="px-6 py-8">
+    <main className="min-h-screen px-6 py-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <BackButton />
-        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Detalle de Partida</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Detalle de Partida</h1>
 
         {loading ? <div className="rounded-2xl bg-[var(--bg-card)] p-6">Cargando detalle...</div> : null}
         {error ? <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-6 text-yellow-200">{error}</div> : null}
 
         {!loading && !error && data ? (
           <>
-            <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 text-sm text-[var(--text-secondary)]">
+            <div className="rounded-2xl border border-[var(--border-default)] bg-gradient-to-r from-[var(--bg-card)] to-[var(--bg-elevated)] p-5 text-sm text-[var(--text-secondary)]">
               {data.queueLabel} · {Math.floor(data.gameDuration / 60)}m · {new Date(data.gameCreation).toLocaleString()}
             </div>
 
             {data.player ? (
               <div className="grid gap-4 lg:grid-cols-3">
-                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 lg:col-span-2">
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 lg:col-span-2">
                   <h2 className="text-lg font-semibold text-[var(--text-primary)]">Tu rendimiento</h2>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded-xl bg-[var(--bg-elevated)] p-3 text-sm">KDA: {data.player.kills}/{data.player.deaths}/{data.player.assists}</div>
@@ -127,15 +127,15 @@ export default function MatchDetailPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6">
                   <h3 className="font-semibold text-[var(--text-primary)]">Feedback inteligente</h3>
                   {data.aiRetrospective ? (
-                    <div className="mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs leading-relaxed text-cyan-100 whitespace-pre-wrap">
+                    <div className="mt-3 max-h-64 overflow-y-auto rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm leading-relaxed text-cyan-100 whitespace-pre-wrap">
                       <div className="mb-1 text-sm font-semibold">Retrospectiva IA local</div>
                       {data.aiRetrospective}
                     </div>
                   ) : null}
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-4 space-y-2">
                     {(data.playerFeedback || []).map((tip: any, index: number) => (
                       <div
                         key={`${tip.title}-${index}`}

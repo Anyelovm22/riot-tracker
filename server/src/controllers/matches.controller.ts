@@ -6,6 +6,7 @@ import {
   getMatchIdsByPuuid,
   getMatchTimelineById,
 } from '../services/riot.service';
+import { generateLocalAiRetrospective } from '../services/ai-feedback.service';
 
 const queueLabels: Record<number, string> = {
   420: 'Ranked Solo/Duo',
@@ -390,6 +391,27 @@ export async function getMatchDetail(req: Request, res: Response) {
 
     const playerFeedback = player ? buildPlayerFeedback(player, teamKills, match.info.gameDuration) : [];
     const itemFeedback = player ? buildItemSwapFeedback({ ...player, gameDuration: match.info.gameDuration }, itemNames) : [];
+    const aiRetrospective =
+      player && playerTeam.length
+        ? await generateLocalAiRetrospective({
+            championName: player.championName || 'Unknown',
+            role: player.individualPosition || 'UNKNOWN',
+            kda: `${player.kills}/${player.deaths}/${player.assists}`,
+            csPerMin: toPerMinute(
+              (player.totalMinionsKilled || 0) + (player.neutralMinionsKilled || 0),
+              match.info.gameDuration
+            ),
+            visionPerMin: toPerMinute(player.visionScore || 0, match.info.gameDuration),
+            damage: player.totalDamageDealtToChampions || 0,
+            damageTaken: player.totalDamageTaken || 0,
+            gold: player.goldEarned || 0,
+            queueLabel: queueLabels[match.info.queueId] || `Queue ${match.info.queueId}`,
+            result: player.win ? 'Victoria' : 'Derrota',
+            itemNames: [player.item0, player.item1, player.item2, player.item3, player.item4, player.item5]
+              .map((itemId: number) => itemNames[itemId])
+              .filter(Boolean),
+          })
+        : null;
 
     return res.json({
       matchId: match.metadata.matchId,
@@ -402,6 +424,7 @@ export async function getMatchDetail(req: Request, res: Response) {
       participants,
       playerFeedback,
       itemFeedback,
+      aiRetrospective,
       timelineSummary: timeline ? getTimelineSummary(timeline, puuid) : null,
     });
   } catch (error: any) {

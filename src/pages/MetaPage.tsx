@@ -580,6 +580,12 @@ export default function MetaPage() {
     loadLpHistory(lpQueue);
   }, [lpQueue]);
 
+  useEffect(() => {
+    if (selectedQueue === 'solo' || selectedQueue === 'flex') {
+      setLpQueue(selectedQueue);
+    }
+  }, [selectedQueue]);
+
   const data = analyticsResponse?.analytics || null;
   const officialRecord = analyticsResponse?.officialRecord || null;
   const cacheCoverage = analyticsResponse?.cacheCoverage || null;
@@ -596,6 +602,8 @@ export default function MetaPage() {
     [rankedEntries]
   );
   const bestAvailableRecord = officialRecord || soloRecord || flexRecord;
+  const selectedQueueRecord =
+    selectedQueue === 'solo' ? soloRecord : selectedQueue === 'flex' ? flexRecord : bestAvailableRecord;
 
   const lpRankedEntry = useMemo(() => {
     const queueType = lpQueue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
@@ -677,25 +685,29 @@ export default function MetaPage() {
 
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
-                <div className="text-xs font-medium text-[var(--text-muted)]">Rango oficial actual</div>
-                {bestAvailableRecord ? (
+                <div className="text-xs font-medium text-[var(--text-muted)]">
+                  {selectedQueue === 'all'
+                    ? 'Rango oficial actual'
+                    : `Rango oficial (${selectedQueue === 'solo' ? 'SoloQ' : 'Flex'})`}
+                </div>
+                {selectedQueueRecord ? (
                   <>
-                    {getRankIcon(bestAvailableRecord.tier) ? (
+                    {getRankIcon(selectedQueueRecord.tier) ? (
                       <img
-                        src={getRankIcon(bestAvailableRecord.tier) || ''}
-                        alt={bestAvailableRecord.tier}
+                        src={getRankIcon(selectedQueueRecord.tier) || ''}
+                        alt={selectedQueueRecord.tier}
                         className="mt-3 h-12 w-12 object-contain"
                       />
                     ) : null}
                     <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                      {bestAvailableRecord.tier} {bestAvailableRecord.rank}
+                      {selectedQueueRecord.tier} {selectedQueueRecord.rank}
                     </div>
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                      {bestAvailableRecord.leaguePoints} LP · {bestAvailableRecord.wins}W / {bestAvailableRecord.losses}L
+                      {selectedQueueRecord.leaguePoints} LP · {selectedQueueRecord.wins}W / {selectedQueueRecord.losses}L
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3 text-sm text-[var(--text-muted)]">No disponible para esta cola.</div>
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">No hay datos oficiales para esta cola.</div>
                 )}
               </div>
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
@@ -747,10 +759,16 @@ export default function MetaPage() {
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
                 <div className="text-xs font-medium text-[var(--text-muted)]">Resumen de temporada</div>
                 <div className="mt-3 text-2xl font-bold text-[var(--text-primary)]">
-                  {data?.summary.total ?? 0}
+                  {selectedQueueRecord ? selectedQueueRecord.wins + selectedQueueRecord.losses : data?.summary.total ?? 0}
                 </div>
                 <div className="mt-2 text-sm text-[var(--text-secondary)]">
-                  {data ? `${data.summary.wins}W / ${data.summary.losses}L · ${data.summary.winRate}% WR` : 'Sin datos'}
+                  {selectedQueueRecord
+                    ? `${selectedQueueRecord.wins}W / ${selectedQueueRecord.losses}L · ${Math.round(
+                        (selectedQueueRecord.wins / Math.max(selectedQueueRecord.wins + selectedQueueRecord.losses, 1)) * 100
+                      )}% WR (Riot oficial)`
+                    : data
+                    ? `${data.summary.wins}W / ${data.summary.losses}L · ${data.summary.winRate}% WR (cache)`
+                    : 'Sin datos'}
                 </div>
               </div>
 

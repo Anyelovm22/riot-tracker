@@ -129,6 +129,12 @@ export default function MatchDetailPage() {
 
                 <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
                   <h3 className="font-semibold text-[var(--text-primary)]">Feedback inteligente</h3>
+                  {data.aiRetrospective ? (
+                    <div className="mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs leading-relaxed text-cyan-100 whitespace-pre-wrap">
+                      <div className="mb-1 text-sm font-semibold">Retrospectiva IA local</div>
+                      {data.aiRetrospective}
+                    </div>
+                  ) : null}
                   <div className="mt-3 space-y-2">
                     {(data.playerFeedback || []).map((tip: any, index: number) => (
                       <div

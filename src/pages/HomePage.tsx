@@ -1,175 +1,322 @@
-import { History, Radio, Swords, TrendingUp, Wrench } from "lucide-react";
-import ChampionCard from "../components/champions/ChampionCard";
-import MatchCard from "../components/history/MatchCard";
-import TopNav from "../components/layout/TopNav";
-import LpChartPanel from "../components/lp/LpChartPanel";
-import RankCard from "../components/profile/RankCard";
-import SummonerCard from "../components/profile/SummonerCard";
-import CompactHeader from "../components/search/CompactHeader";
-import LandingSearch from "../components/search/LandingSearch";
-import QueueToggle from "../components/shared/QueueToggle";
-import BuildPanel from "../components/builds/BuildPanel";
-import LiveGamePanel from "../components/live/LiveGamePanel";
-import { useLiveGame } from "../hooks/UseLiveGame";
-import { useSummonerSearch } from "../hooks/useSummonerSearch";
-import type { MainTab } from "../types/riot";
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { fetchProfileSummary } from '../services/profile';
+import { fetchLiveGame } from '../services/live';
+import { readStoredProfile } from '../utils/profileStorage';
+import { clearModuleCache, saveCache } from '../utils/appCache';
+import { getApiErrorMessage } from '../utils/httpError';
 
-const TABS: {
-  key: MainTab;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}[] = [
-  { key: "lp", label: "Progreso LP", icon: TrendingUp },
-  { key: "history", label: "Historial", icon: History },
-  { key: "champions", label: "Campeones", icon: Swords },
-  { key: "live", label: "En Vivo", icon: Radio },
-  { key: "builds", label: "Builds", icon: Wrench }
+function parseRiotId(input: string) {
+  const parts = input.trim().split('#');
+
+  if (parts.length !== 2) {
+    throw new Error('Usa el formato Nombre#TAG');
+  }
+
+  const gameName = parts[0].trim();
+  const tagLine = parts[1].trim();
+
+  if (!gameName || !tagLine) {
+    throw new Error('Nombre o TAG invalidos');
+  }
+
+  return { gameName, tagLine };
+}
+
+function getProfileIconUrl(iconId?: number) {
+  if (!iconId) return '';
+  return `https://ddragon.leagueoflegends.com/cdn/15.7.1/img/profileicon/${iconId}.png`;
+}
+
+const navCards = [
+  {
+    key: 'matches',
+    path: '/matches',
+    title: 'Historial',
+    desc: 'SoloQ, Flex, Normals, ARAM y mas.',
+    icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+    color: 'from-blue-500 to-cyan-500',
+  },
+  {
+    key: 'meta',
+    path: '/meta',
+    title: 'Analisis Pro',
+    desc: 'Tendencia, roles, campeones y problemas.',
+    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+    color: 'from-purple-500 to-pink-500',
+  },
+  {
+    key: 'live',
+    path: '/live',
+    title: 'Live',
+    desc: 'Partida en vivo si existe.',
+    icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+    color: 'from-red-500 to-orange-500',
+  },
+  {
+    key: 'builds',
+    path: '/builds',
+    title: 'Builds',
+    desc: 'Items frecuentes con imagenes.',
+    icon: 'M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z',
+    color: 'from-emerald-500 to-teal-500',
+  },
+  {
+    key: 'champions',
+    path: '/champions',
+    title: 'Champions',
+    desc: 'Catalogo completo.',
+    icon: 'M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+    color: 'from-yellow-500 to-amber-500',
+  },
+];
+
+const featureCards = [
+  { title: 'Historial', desc: 'Partidas recientes con filtros e items.', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { title: 'Ranked', desc: 'Analisis profundo del rendimiento.', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+  { title: 'Live', desc: 'Partida activa del jugador.', icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+  { title: 'Builds', desc: 'Items frecuentes e imagenes.', icon: 'M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z' },
+  { title: 'Champions', desc: 'Catalogo de campeones.', icon: 'M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
 ];
 
 export default function HomePage() {
-  const {
-    riotId,
-    setRiotId,
-    region,
-    setRegion,
-    activeTab,
-    setActiveTab,
-    queueView,
-    setQueueView,
-    loading,
-    error,
-    hasSearched,
-    data,
-    currentRank,
-    lpData,
-    recentSummary,
-    handleSearch,
-    loadDemo
-  } = useSummonerSearch();
+  const [searchValue, setSearchValue] = useState('');
+  const [region, setRegion] = useState('la2');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [summary, setSummary] = useState<any>(() => readStoredProfile());
 
-  const { liveData } = useLiveGame(activeTab === "live" && hasSearched);
+  const navigate = useNavigate();
+
+  async function handleSearch() {
+    try {
+      setLoading(true);
+      setError('');
+
+      clearModuleCache();
+
+      const { gameName, tagLine } = parseRiotId(searchValue);
+      const profile = await fetchProfileSummary({ gameName, tagLine, region });
+
+      setSummary(profile);
+      saveCache('profile', profile);
+      localStorage.setItem('riot-profile-summary', JSON.stringify(profile));
+
+      const puuid = profile.account.puuid;
+      const platform = profile.resolvedPlatform;
+
+      const liveResult = await fetchLiveGame({ puuid, platform }).catch(() => null);
+
+      if (liveResult) {
+        saveCache('live', liveResult);
+      }
+    } catch (err: any) {
+      setError(getApiErrorMessage(err, 'No se pudo cargar el perfil'));
+      setSummary(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleReset() {
+    clearModuleCache();
+    localStorage.removeItem('riot-profile-summary');
+    setSummary(null);
+    setSearchValue('');
+    setError('');
+  }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
-      {/* Background gradient */}
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,212,255,0.12),_transparent_50%),radial-gradient(ellipse_at_bottom_right,_rgba(255,79,109,0.08),_transparent_50%)]" />
-      
-      {/* Grid pattern overlay */}
-      <div className="fixed inset-0 opacity-[0.015]" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'1\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")' }} />
+    <main className="relative min-h-screen">
+      {/* Background effects */}
+      <div className="pointer-events-none absolute inset-0 bg-[var(--gradient-glow)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_rgba(139,92,246,0.1),_transparent_50%)]" />
 
-      <div className="relative z-10 mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <TopNav />
+      {/* Hero Section */}
+      <section className="relative border-b border-[var(--border-subtle)]">
+        <div className="mx-auto max-w-6xl px-6 py-16">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-blue-500/25">
+              <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <h1 className="text-4xl font-bold tracking-tight text-[var(--text-primary)] md:text-5xl">
+              Riot<span className="text-[var(--accent-primary)]">Tracker</span>
+            </h1>
+            <p className="mt-4 max-w-lg text-lg text-[var(--text-secondary)]">
+              Busca un invocador y accede al historial, ranked, live, builds y champions.
+            </p>
 
-        {!hasSearched ? (
-          <LandingSearch
-            riotId={riotId}
-            setRiotId={setRiotId}
-            region={region}
-            setRegion={setRegion}
-            onSearch={handleSearch}
-            loading={loading}
-            error={error}
-            onDemo={loadDemo}
-          />
-        ) : (
-          <>
-            <CompactHeader
-              riotId={riotId}
-              setRiotId={setRiotId}
-              region={region}
-              setRegion={setRegion}
-              onSearch={handleSearch}
-              loading={loading}
-              currentName={`${data.profile.gameName}#${data.profile.tagLine}`}
-            />
+            {/* Search Form */}
+            <div className="mt-10 w-full max-w-2xl">
+              <div className="flex flex-col gap-3 md:flex-row">
+                <div className="relative flex-1">
+                  <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                  <input
+                    value={searchValue}
+                    onChange={(e) => setSearchValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                    placeholder="Nombre#TAG (ej: Dandrel10#LAN)"
+                    className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] py-3.5 pl-12 pr-4 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition-all focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20"
+                  />
+                </div>
 
-            {error && (
-              <div className="mt-4 rounded-lg border border-[#ff4f6d]/20 bg-[#ff4f6d]/10 px-4 py-3 text-sm text-[#ff4f6d]">
-                {error}
+                <select
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                  className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3.5 text-[var(--text-primary)] transition-all focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20"
+                >
+                  <option value="la2">LAS</option>
+                  <option value="la1">LAN</option>
+                  <option value="na1">NA</option>
+                  <option value="br1">BR</option>
+                  <option value="euw1">EUW</option>
+                  <option value="eun1">EUNE</option>
+                  <option value="kr">KR</option>
+                  <option value="jp1">JP</option>
+                </select>
+
+                <button
+                  onClick={handleSearch}
+                  disabled={loading}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-primary)] px-6 py-3.5 font-medium text-white shadow-lg shadow-blue-500/25 transition-all hover:bg-[var(--accent-primary-hover)] hover:shadow-blue-500/40 disabled:opacity-60"
+                >
+                  {loading ? (
+                    <>
+                      <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Buscando...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                      </svg>
+                      Buscar
+                    </>
+                  )}
+                </button>
               </div>
-            )}
 
-            {/* Profile cards */}
-            <section className="mt-8 grid gap-4 lg:grid-cols-3">
-              <SummonerCard profile={data.profile} challenges={data.challenges} />
-              <RankCard title="Solo/Duo" entry={data.solo} accent="primary" />
-              <RankCard title="Flex 5v5" entry={data.flex} accent="secondary" />
-            </section>
-
-            {/* Tabs section */}
-            <section className="mt-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                {TABS.map(({ key, label, icon: Icon }) => (
-                  <button
-                    key={key}
-                    onClick={() => setActiveTab(key)}
-                    className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                      activeTab === key
-                        ? "border-[#00d4ff]/30 bg-[#00d4ff]/10 text-[#00d4ff] shadow-[0_0_20px_rgba(0,212,255,0.15)]"
-                        : "border-white/[0.06] bg-white/[0.02] text-white/60 hover:border-white/10 hover:bg-white/[0.04] hover:text-white/80"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {(activeTab === "lp" || activeTab === "history") && (
-                <div className="inline-flex rounded-lg border border-white/[0.06] bg-white/[0.02] p-1">
-                  <QueueToggle active={queueView === "solo"} onClick={() => setQueueView("solo")}>
-                    Solo/Duo
-                  </QueueToggle>
-                  <QueueToggle active={queueView === "flex"} onClick={() => setQueueView("flex")}>
-                    Flex
-                  </QueueToggle>
+              {error && (
+                <div className="mt-4 flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
+                  <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm text-red-300">{error}</p>
                 </div>
               )}
-            </section>
+            </div>
+          </div>
+        </div>
+      </section>
 
-            {/* Tab content */}
-            {activeTab === "lp" && (
-              <LpChartPanel
-                queueView={queueView}
-                currentRank={currentRank}
-                lpData={lpData}
-                hasHistory={queueView === "solo" ? data.hasSoloLpHistory : data.hasFlexLpHistory}
-              />
-            )}
-
-            {activeTab === "history" && (
-              <div className="mt-6">
-                <div className="mb-5 flex flex-wrap items-center gap-4 text-sm">
-                  <span className="text-white/50">Ultimas {data.recentMatches.length} partidas</span>
-                  <div className="flex items-center gap-3">
-                    <span className="font-semibold text-[#00d4ff]">{recentSummary.wins}V</span>
-                    <span className="font-semibold text-[#ff4f6d]">{recentSummary.losses}D</span>
-                    <span className="rounded-md bg-white/[0.04] px-2 py-1 text-white/70">{recentSummary.wr}% WR</span>
+      {/* Content Section */}
+      <section className="relative mx-auto max-w-6xl px-6 py-12">
+        {!summary ? (
+          <>
+            <h2 className="mb-6 text-center text-sm font-medium uppercase tracking-wider text-[var(--text-muted)]">
+              Funcionalidades disponibles
+            </h2>
+            <div className="grid gap-4 md:grid-cols-5">
+              {featureCards.map((card) => (
+                <div
+                  key={card.title}
+                  className="card-hover group rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5"
+                >
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--bg-elevated)] text-[var(--text-muted)] transition-colors group-hover:bg-[var(--accent-primary)]/10 group-hover:text-[var(--accent-primary)]">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d={card.icon} />
+                    </svg>
                   </div>
+                  <h3 className="font-semibold text-[var(--text-primary)]">{card.title}</h3>
+                  <p className="mt-1.5 text-sm text-[var(--text-muted)]">{card.desc}</p>
                 </div>
-                <div className="space-y-3">
-                  {data.recentMatches.map((match) => (
-                    <MatchCard key={match.matchId} match={match} />
-                  ))}
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="space-y-8 animate-fade-in">
+            {/* Profile Card */}
+            <div className="overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)]">
+              <div className="h-24 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20" />
+              <div className="px-6 pb-6">
+                <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                  <div className="flex items-end gap-4">
+                    <div className="-mt-12 overflow-hidden rounded-2xl border-4 border-[var(--bg-card)] shadow-xl">
+                      <img
+                        src={getProfileIconUrl(summary.summoner?.profileIconId)}
+                        alt="Profile icon"
+                        className="h-24 w-24 object-cover"
+                      />
+                    </div>
+                    <div className="pb-1">
+                      <h2 className="text-2xl font-bold text-[var(--text-primary)]">
+                        {summary.account.gameName}
+                        <span className="text-[var(--text-muted)]">#{summary.account.tagLine}</span>
+                      </h2>
+                      <div className="mt-1 flex items-center gap-3 text-sm text-[var(--text-secondary)]">
+                        <span className="flex items-center gap-1.5">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                          </svg>
+                          Nivel {summary.summoner.summonerLevel}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+                          </svg>
+                          {summary.resolvedPlatform.toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleReset}
+                    className="flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Limpiar busqueda
+                  </button>
                 </div>
               </div>
-            )}
+            </div>
 
-            {activeTab === "champions" && (
-              <section className="mt-6">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                  {data.topChampions.map((champion, index) => (
-                    <ChampionCard key={champion.championId} champion={champion} index={index} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {activeTab === "live" && <LiveGamePanel riotData={data} liveData={liveData} />}
-            {activeTab === "builds" && <BuildPanel data={data} />}
-          </>
+            {/* Navigation Cards */}
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              {navCards.map((card) => (
+                <button
+                  key={card.key}
+                  onClick={() => navigate(card.path)}
+                  className="group relative overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 text-left transition-all hover:border-[var(--border-hover)] hover:shadow-lg"
+                >
+                  <div className={`absolute inset-0 bg-gradient-to-br ${card.color} opacity-0 transition-opacity group-hover:opacity-5`} />
+                  <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${card.color} text-white shadow-lg`}>
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d={card.icon} />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">{card.title}</h3>
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">{card.desc}</p>
+                  <div className="mt-3 flex items-center gap-1 text-xs font-medium text-[var(--accent-primary)]">
+                    Ver mas
+                    <svg className="h-3 w-3 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
         )}
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

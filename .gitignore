@@ -16,3 +16,5 @@ logs/
 *.backup
 *.zip
 *.tar.gz
+
+/src/generated/prisma

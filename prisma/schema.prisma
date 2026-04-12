@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PlayerMatchCache {
+  id           String @id @default(cuid())
+  puuid        String
+  platform     String
+  matchId      String @unique
+  queueId      Int
+  gameCreation BigInt
+  gameDuration Int
+
+  championName String
+  kills        Int
+  deaths       Int
+  assists      Int
+  win          Boolean
+
+  totalMinionsKilled          Int     @default(0)
+  neutralMinionsKilled        Int     @default(0)
+  totalDamageDealtToChampions Int     @default(0)
+  totalDamageTaken            Int     @default(0)
+  visionScore                 Int     @default(0)
+  timeCCingOthers             Int     @default(0)
+  damageDealtToObjectives     Int     @default(0)
+  turretTakedowns             Int     @default(0)
+  goldEarned                  Int     @default(0)
+  individualPosition          String?
+
+  fetchedAt DateTime @default(now())
+
+  @@index([puuid, platform, gameCreation])
+  @@index([puuid, platform, queueId, gameCreation])
+}
+
+model PlayerSyncState {
+  id             String    @id @default(cuid())
+  puuid          String
+  platform       String
+  lastMatchStart Int       @default(0)
+  lastFullSyncAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([puuid, platform])
+}
+
+model PlayerRankSnapshot {
+  id           String   @id @default(cuid())
+  puuid        String
+  platform     String
+  queueType    String
+  tier         String
+  rank         String
+  leaguePoints Int
+  wins         Int
+  losses       Int
+  snapshotAt   DateTime @default(now())
+
+  @@index([puuid, platform, queueType, snapshotAt])
+}

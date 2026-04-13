@@ -482,6 +482,38 @@ function canRecommendItemForProfile(
   myClass: ChampionClass,
   role?: Role
 ) {
+  const utilityTankAllowed = role === 'UTILITY' && myClass === 'support';
+  const allowedByClass: Partial<Record<number, ChampionClass[]>> = {
+    [ITEM_DB.frozenHeart.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.randuin.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.forceOfNature.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.kaenic.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.spiritVisage.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.jaksho.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.unendingDespair.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.sunfire.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.deadMansPlate.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.brambleVest.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.thornmail.id]: ['tank', 'bruiser', 'support'],
+    [ITEM_DB.zhonyas.id]: ['mage', 'assassin', 'support'],
+    [ITEM_DB.banshee.id]: ['mage', 'assassin', 'support'],
+    [ITEM_DB.liandry.id]: ['mage', 'support'],
+    [ITEM_DB.morello.id]: ['mage', 'support'],
+    [ITEM_DB.oblivionOrb.id]: ['mage', 'support'],
+    [ITEM_DB.blackCleaver.id]: ['bruiser', 'assassin', 'marksman'],
+    [ITEM_DB.bork.id]: ['bruiser', 'assassin', 'marksman'],
+    [ITEM_DB.deathsDance.id]: ['bruiser', 'assassin', 'marksman'],
+    [ITEM_DB.maw.id]: ['bruiser', 'assassin', 'marksman'],
+    [ITEM_DB.guardianAngel.id]: ['bruiser', 'assassin', 'marksman'],
+  };
+
+  const classPool = allowedByClass[item.id];
+  if (classPool && !classPool.includes(myClass)) {
+    if (!(utilityTankAllowed && classPool.includes('support'))) {
+      return false;
+    }
+  }
+
   if (isDefensiveTankItem(item.id)) {
     return canUseDefensiveTankItems(myClass, role);
   }
@@ -851,6 +883,13 @@ function pushRecommendation(
   priority: 'alta' | 'media' | 'baja',
   counters: string[]
 ) {
+  if (
+    [ITEM_DB.platedSteelcaps.id, ITEM_DB.mercs.id].includes(item.id) &&
+    ownsAnyBoots(ownedItems)
+  ) {
+    return;
+  }
+
   if (alreadyOwnItem(ownedItems, item)) return;
 
   if (!list.some((entry) => entry.itemId === item.id)) {
@@ -1309,13 +1348,20 @@ function buildProRecommendations(
     }
   }
 
-  const deduped = dedupeRecommendations(result);
+  const deduped = dedupeRecommendations(result).filter((item) =>
+    canRecommendItemForProfile(
+      { id: item.itemId, name: item.name },
+      myClass,
+      myRole
+    )
+  );
 
   if (!deduped.length) {
     const enemyProfile = enemy ? analyzeEnemyBuild(enemy) : null;
 
     if (
       enemyProfile?.damageType === 'AD' &&
+      !ownsAnyBoots(ownedItems) &&
       !alreadyOwnItem(ownedItems, ITEM_DB.platedSteelcaps)
     ) {
       deduped.push({
@@ -1329,6 +1375,7 @@ function buildProRecommendations(
 
     if (
       enemyProfile?.damageType === 'AP' &&
+      !ownsAnyBoots(ownedItems) &&
       !alreadyOwnItem(ownedItems, ITEM_DB.mercs)
     ) {
       deduped.push({
@@ -1407,7 +1454,12 @@ function buildProRecommendations(
       ITEM_DB.jaksho,
     ];
 
-    const fallback = emergencyPool.find((item) => !alreadyOwnItem(ownedItems, item));
+    const fallback = emergencyPool.find((item) => {
+      if ([ITEM_DB.platedSteelcaps.id, ITEM_DB.mercs.id].includes(item.id) && ownsAnyBoots(ownedItems)) {
+        return false;
+      }
+      return !alreadyOwnItem(ownedItems, item);
+    });
     if (fallback) {
       deduped.push({
         itemId: fallback.id,
@@ -1441,6 +1493,10 @@ function isBootsItem(item: LiveItem) {
   );
 }
 
+function ownsAnyBoots(items: LiveItem[] = []) {
+  return items.some((item) => isBootsItem(item));
+}
+
 function isStarterOrLowValueItem(item: LiveItem) {
   const name = normalizeText(item.displayName);
 
@@ -1459,6 +1515,13 @@ function isStarterOrLowValueItem(item: LiveItem) {
 function shouldSwapBoots(items: LiveItem[] = []) {
   const fullItems = items.filter((item) => item.itemID && !isStarterOrLowValueItem(item));
   return fullItems.length >= 6 && fullItems.some(isBootsItem);
+}
+
+function hasNearFullBuild(items: LiveItem[] = []) {
+  const combatItems = items.filter(
+    (item) => item.itemID && !isStarterOrLowValueItem(item)
+  );
+  return combatItems.length >= 5;
 }
 
 function getSellCandidates(items: LiveItem[] = []) {
@@ -1635,13 +1698,17 @@ function buildAdaptiveTips(
 
 function buildBuildAdvice(
   me: LivePlayer,
-  enemy: LivePlayer | null
+  enemy: LivePlayer | null,
+  comparison: MatchupComparison | null
 ): BuildAdvice {
-  const sellCandidates = getSellCandidates(me.items || []);
-  const decayCandidates = getDecayCandidates(me, enemy, null);
+  const nearFullBuild = hasNearFullBuild(me.items || []);
+  const sellCandidates = nearFullBuild ? getSellCandidates(me.items || []) : [];
+  const decayCandidates = nearFullBuild
+    ? getDecayCandidates(me, enemy, comparison)
+    : [];
 
   const replaceSuggestions: ReplaceSuggestion[] = [
-    ...getNextOwnedCounterUpgrade(me, enemy),
+    ...(nearFullBuild ? getNextOwnedCounterUpgrade(me, enemy) : []),
   ];
 
   if (shouldSwapBoots(me.items || [])) {
@@ -1924,9 +1991,7 @@ export async function getLiveAnalysis(req: Request, res: Response) {
           })()
         : buildProRecommendations(me, primaryTarget, comparisons[0] || null);
 
-    const initialBuildAdvice = buildBuildAdvice(me, primaryTarget);
-    const sellCandidates = getSellCandidates(me.items || []);
-    const replaceSuggestions = initialBuildAdvice.replaceSuggestions;
+    const initialBuildAdvice = buildBuildAdvice(me, primaryTarget, comparisons[0] || null);
     const targetForBuildAdvice =
       mode === 'team'
         ? selectedTargets
@@ -1934,12 +1999,16 @@ export async function getLiveAnalysis(req: Request, res: Response) {
             .sort((a, b) => safeNumber(b.scores?.gold, 0) - safeNumber(a.scores?.gold, 0))[0] || null
         : primaryTarget;
 
-    const decayCandidates = getDecayCandidates(me, targetForBuildAdvice, comparisons[0] || null);
+    const buildAdviceByTarget = buildBuildAdvice(
+      me,
+      targetForBuildAdvice,
+      comparisons[0] || null
+    );
 
     const buildAdvice: BuildAdvice = {
-      sellCandidates,
-      replaceSuggestions,
-      decayCandidates,
+      sellCandidates: buildAdviceByTarget.sellCandidates,
+      replaceSuggestions: buildAdviceByTarget.replaceSuggestions,
+      decayCandidates: buildAdviceByTarget.decayCandidates,
       fullBuildTips: [
         'Refresca el análisis si el rival enseña nuevos items.',
         'El counter se basa en lo que el enemigo ya mostró, no en una build inventada.',

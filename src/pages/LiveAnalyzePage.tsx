@@ -31,6 +31,7 @@ export default function LiveAnalyzePage() {
   const [error, setError] = useState('');
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [ddragonVersion, setDdragonVersion] = useState('15.7.1');
+  const [dismissedItemIds, setDismissedItemIds] = useState<number[]>([]);
 
   const modeRef = useRef(mode);
   const targetRef = useRef(targetRiotId);
@@ -308,7 +309,13 @@ export default function LiveAnalyzePage() {
     );
   }
 
-  function RecommendationCard({ item }: { item: RecommendedItem }) {
+  function RecommendationCard({
+    item,
+    onDismiss,
+  }: {
+    item: RecommendedItem;
+    onDismiss: (itemId: number) => void;
+  }) {
     const priorityTone =
       item.priority === 'alta'
         ? 'text-red-300'
@@ -340,6 +347,12 @@ export default function LiveAnalyzePage() {
               </p>
             )}
           </div>
+          <button
+            onClick={() => onDismiss(item.itemId)}
+            className="rounded-lg border border-[var(--border-default)] px-2.5 py-1 text-xs text-[var(--text-secondary)] transition hover:bg-black/20"
+          >
+            Descartar
+          </button>
         </div>
       </div>
     );
@@ -643,9 +656,19 @@ export default function LiveAnalyzePage() {
 
             <div className="space-y-6">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-xl">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                  Counter recomendado
-                </h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                    Counter recomendado
+                  </h2>
+                  {!!dismissedItemIds.length && (
+                    <button
+                      onClick={() => setDismissedItemIds([])}
+                      className="rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-black/20"
+                    >
+                      Restablecer descartados
+                    </button>
+                  )}
+                </div>
 
                 <div className="mt-4 space-y-4">
                   {(data.recommendations || []).map((rec) => (
@@ -661,12 +684,19 @@ export default function LiveAnalyzePage() {
                       </p>
 
                       <div className="mt-4 space-y-3">
-                        {(rec.items || []).map((item) => (
-                          <RecommendationCard
-                            key={`${rec.key}-${item.itemId}`}
-                            item={item}
-                          />
-                        ))}
+                        {(rec.items || [])
+                          .filter((item) => !dismissedItemIds.includes(item.itemId))
+                          .map((item) => (
+                            <RecommendationCard
+                              key={`${rec.key}-${item.itemId}`}
+                              item={item}
+                              onDismiss={(itemId) =>
+                                setDismissedItemIds((prev) =>
+                                  prev.includes(itemId) ? prev : [...prev, itemId]
+                                )
+                              }
+                            />
+                          ))}
                       </div>
                     </div>
                   ))}

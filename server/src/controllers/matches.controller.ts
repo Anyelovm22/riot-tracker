@@ -6,7 +6,7 @@ import {
   getMatchIdsByPuuid,
   getMatchTimelineById,
 } from '../services/riot.service';
-import { generateLocalAiRetrospective } from '../services/ai-feedback.service.ts';
+import { generateLocalAiRetrospective } from '../services/ai-feedback.service';
 
 const queueLabels: Record<number, string> = {
   420: 'Ranked Solo/Duo',
@@ -166,6 +166,27 @@ function buildItemSwapFeedback(player: any, itemNames: Record<number, string>) {
   }
 
   return tips.slice(0, 4);
+}
+
+function getParticipantDisplayName(p: any) {
+  if (p.riotIdGameName && p.riotIdTagline) return `${p.riotIdGameName}#${p.riotIdTagline}`;
+  return p.summonerName || p.championName || 'Jugador';
+}
+
+function resolveLaneEnemy(player: any, participants: any[]) {
+  if (!player) return null;
+
+  const sameRoleEnemy = participants.find(
+    (p) =>
+      p.puuid !== player.puuid &&
+      p.teamId !== player.teamId &&
+      p.individualPosition &&
+      p.individualPosition === player.individualPosition
+  );
+
+  if (sameRoleEnemy) return sameRoleEnemy;
+
+  return participants.find((p) => p.puuid !== player.puuid && p.teamId !== player.teamId) || null;
 }
 
 
@@ -391,6 +412,7 @@ export async function getMatchDetail(req: Request, res: Response) {
 
     const playerFeedback = player ? buildPlayerFeedback(player, teamKills, match.info.gameDuration) : [];
     const itemFeedback = player ? buildItemSwapFeedback({ ...player, gameDuration: match.info.gameDuration }, itemNames) : [];
+    const laneEnemy = player ? resolveLaneEnemy(player, match?.info?.participants || []) : null;
     const aiRetrospective =
       player && playerTeam.length
         ? await generateLocalAiRetrospective({
@@ -410,6 +432,29 @@ export async function getMatchDetail(req: Request, res: Response) {
             itemNames: [player.item0, player.item1, player.item2, player.item3, player.item4, player.item5]
               .map((itemId: number) => itemNames[itemId])
               .filter(Boolean),
+            laneEnemy: laneEnemy
+              ? {
+                  championName: laneEnemy.championName || 'Unknown',
+                  role: laneEnemy.individualPosition || 'UNKNOWN',
+                  kda: `${laneEnemy.kills || 0}/${laneEnemy.deaths || 0}/${laneEnemy.assists || 0}`,
+                  csPerMin: toPerMinute(
+                    (laneEnemy.totalMinionsKilled || 0) + (laneEnemy.neutralMinionsKilled || 0),
+                    match.info.gameDuration
+                  ),
+                  damage: laneEnemy.totalDamageDealtToChampions || 0,
+                  gold: laneEnemy.goldEarned || 0,
+                  itemNames: [
+                    laneEnemy.item0,
+                    laneEnemy.item1,
+                    laneEnemy.item2,
+                    laneEnemy.item3,
+                    laneEnemy.item4,
+                    laneEnemy.item5,
+                  ]
+                    .map((itemId: number) => itemNames[itemId])
+                    .filter(Boolean),
+                }
+              : null,
           })
         : null;
 
@@ -425,6 +470,24 @@ export async function getMatchDetail(req: Request, res: Response) {
       playerFeedback,
       itemFeedback,
       aiRetrospective,
+      laneReference: laneEnemy
+        ? {
+            riotId: getParticipantDisplayName(laneEnemy),
+            championName: laneEnemy.championName,
+            role: laneEnemy.individualPosition || 'UNKNOWN',
+            kda: `${laneEnemy.kills || 0}/${laneEnemy.deaths || 0}/${laneEnemy.assists || 0}`,
+            cs: (laneEnemy.totalMinionsKilled || 0) + (laneEnemy.neutralMinionsKilled || 0),
+            csPerMin: toPerMinute(
+              (laneEnemy.totalMinionsKilled || 0) + (laneEnemy.neutralMinionsKilled || 0),
+              match.info.gameDuration
+            ),
+            gold: laneEnemy.goldEarned || 0,
+            damage: laneEnemy.totalDamageDealtToChampions || 0,
+            items: [laneEnemy.item0, laneEnemy.item1, laneEnemy.item2, laneEnemy.item3, laneEnemy.item4, laneEnemy.item5]
+              .map((itemId: number) => itemNames[itemId])
+              .filter(Boolean),
+          }
+        : null,
       timelineSummary: timeline ? getTimelineSummary(timeline, puuid) : null,
     });
   } catch (error: any) {

@@ -13,14 +13,30 @@ type RetrospectiveInput = {
   queueLabel: string;
   result: 'Victoria' | 'Derrota';
   itemNames: string[];
+  laneEnemy?: {
+    championName: string;
+    role: string;
+    kda: string;
+    csPerMin: number;
+    damage: number;
+    gold: number;
+    itemNames: string[];
+  } | null;
 };
 
 function generateRuleBasedRetrospective(input: RetrospectiveInput) {
   const sections: string[] = [];
   sections.push(`1) Fortalezas:\n- ${input.result} en ${input.queueLabel} con ${input.championName} (${input.role}).`);
-  sections.push(`2) Ajustes clave:\n- KDA ${input.kda}, CS/min ${input.csPerMin}, Vision/min ${input.visionPerMin}. Prioriza decisiones de riesgo bajo y mejor timing de objetivos.`);
-  sections.push(`3) Build:\n- Revisa si tu build final (${input.itemNames.slice(0, 6).join(', ') || 'N/A'}) tuvo valor completo en late. Si un ítem no impactó, cámbialo por supervivencia o daño sostenido según amenaza rival.`);
-  sections.push(`4) Plan próxima partida:\n- Primeros 10 min: farm seguro + visión de río.\n- Min 10-20: jugar por objetivo con prioridad de línea.\n- Late: pelear sólo con visión y cooldowns.`);
+  sections.push(`2) Ajustes clave:\n- KDA ${input.kda}, CS/min ${input.csPerMin}, Vision/min ${input.visionPerMin}, daño ${input.damage}, oro ${input.gold}. Prioriza decisiones de riesgo bajo y mejor timing de objetivos.`);
+
+  if (input.laneEnemy) {
+    sections.push(
+      `3) Matchup de línea:\n- Rival ${input.laneEnemy.championName} (${input.laneEnemy.role}) con KDA ${input.laneEnemy.kda}, CS/min ${input.laneEnemy.csPerMin}, daño ${input.laneEnemy.damage}, oro ${input.laneEnemy.gold}.\n- Items rival: ${input.laneEnemy.itemNames.slice(0, 6).join(', ') || 'N/A'}.`
+    );
+  }
+
+  sections.push(`4) Build:\n- Tu build final: ${input.itemNames.slice(0, 6).join(', ') || 'N/A'}.\n- Si un ítem no impactó, véndelo por una opción situacional que responda a los items del rival de línea.`);
+  sections.push(`5) Plan próxima partida:\n- Primeros 10 min: farm seguro + visión de río.\n- Min 10-20: jugar por objetivo con prioridad de línea.\n- Late: pelear sólo con visión y cooldowns.`);
   return sections.join('\n\n');
 }
 
@@ -42,6 +58,12 @@ Datos:
 - Daño recibido: ${input.damageTaken}
 - Oro: ${input.gold}
 - Build final: ${input.itemNames.filter(Boolean).join(', ') || 'N/A'}
+- Rival de línea: ${input.laneEnemy?.championName || 'N/A'} (${input.laneEnemy?.role || 'N/A'})
+- KDA rival de línea: ${input.laneEnemy?.kda || 'N/A'}
+- CS/min rival de línea: ${input.laneEnemy?.csPerMin ?? 'N/A'}
+- Daño rival de línea: ${input.laneEnemy?.damage ?? 'N/A'}
+- Oro rival de línea: ${input.laneEnemy?.gold ?? 'N/A'}
+- Build rival de línea: ${input.laneEnemy?.itemNames?.filter(Boolean).join(', ') || 'N/A'}
 `;
 
   try {

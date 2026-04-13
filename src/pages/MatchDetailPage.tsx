@@ -214,6 +214,24 @@ export default function MatchDetailPage() {
               </div>
             ) : null}
 
+            {data.laneReference ? (
+              <div className="rounded-2xl border border-violet-500/30 bg-violet-500/10 p-5">
+                <h3 className="font-semibold text-violet-100">Referencia de matchup de línea</h3>
+                <p className="mt-1 text-sm text-violet-200">
+                  {data.laneReference.riotId} · {data.laneReference.championName} · {data.laneReference.role}
+                </p>
+                <div className="mt-3 grid gap-3 text-sm text-violet-100 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl bg-black/20 p-3">KDA: {data.laneReference.kda}</div>
+                  <div className="rounded-xl bg-black/20 p-3">CS/min: {data.laneReference.csPerMin}</div>
+                  <div className="rounded-xl bg-black/20 p-3">Daño: {formatNumber(data.laneReference.damage)}</div>
+                  <div className="rounded-xl bg-black/20 p-3">Oro: {formatNumber(data.laneReference.gold)}</div>
+                </div>
+                <p className="mt-3 text-xs text-violet-100/80">
+                  Items rival: {(data.laneReference.items || []).join(', ') || 'N/A'}
+                </p>
+              </div>
+            ) : null}
+
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-3">
                 <h2 className="font-semibold text-blue-400">Equipo Azul</h2>

@@ -1651,6 +1651,20 @@ function buildLiveCoach(
     .map((entry) => `${entry.item}: ${entry.reason}`);
 
   const now: string[] = [];
+  now.push(
+    `Estado (${me.position || 'NONE'}): KDA ${safeNumber(me.scores?.kills, 0)}/${safeNumber(me.scores?.deaths, 0)}/${safeNumber(me.scores?.assists, 0)}, CS ${safeNumber(me.scores?.creepScore, 0)}, Oro ${safeNumber(me.scores?.gold, 0)}, Daño ${safeNumber(me.scores?.damage, 0)}.`
+  );
+
+  if (enemy) {
+    const shownItems = (enemy.items || [])
+      .map((item) => item.displayName)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(', ');
+    now.push(
+      `Referencia rival (${enemy.position || 'NONE'} · ${enemy.championName}): KDA ${safeNumber(enemy.scores?.kills, 0)}/${safeNumber(enemy.scores?.deaths, 0)}/${safeNumber(enemy.scores?.assists, 0)}, CS ${safeNumber(enemy.scores?.creepScore, 0)}${shownItems ? `, items ${shownItems}` : ''}.`
+    );
+  }
 
   if ((comparison?.diff.cs ?? 0) <= -10) now.push('Prioriza farm seguro 60-90s antes de forzar pelea.');
   if ((comparison?.diff.vision ?? 0) < -6) now.push('Juega con visión defensiva y evita zonas oscuras.');
@@ -1719,7 +1733,7 @@ function findEnemyByRiotId(enemies: LivePlayer[], targetRiotId?: string) {
   );
 }
 
-function buildNarrativeSummary(targets: LivePlayer[]) {
+function buildNarrativeSummary(targets: LivePlayer[], me?: LivePlayer | null, comparisons: MatchupComparison[] = []) {
   if (!targets.length) {
     return 'No se encontraron objetivos para analizar.';
   }
@@ -1730,12 +1744,18 @@ function buildNarrativeSummary(targets: LivePlayer[]) {
     const shown = profile.shownCoreItems.length
       ? `Items visibles: ${profile.shownCoreItems.join(', ')}.`
       : '';
+    const comparison = comparisons[0];
+    const matchupContext = comparison
+      ? ` Matchup directo (${me?.position || 'NONE'} vs ${target.position || 'NONE'}): diff KDA ${comparison.diff.kda}, diff CS ${comparison.diff.cs}, diff oro ${
+          comparison.diff.gold ?? 'N/A'
+        }, diff daño ${comparison.diff.damage ?? 'N/A'}.`
+      : '';
 
     return `${target.championName} está jugando una ruta ${profile.buildType.toUpperCase()} con daño ${profile.damageType}. ${
       profile.sustain ? 'Tiene sustain importante. ' : ''
     }${profile.frontline ? 'Puede aguantar peleas largas. ' : ''}${
       profile.antiTank ? 'Sus items castigan bien a campeones con vida o resistencias. ' : ''
-    }${shown}`;
+    }${shown}${matchupContext}`;
   }
 
   const profiles = targets.map(analyzeEnemyBuild);
@@ -1886,7 +1906,7 @@ export async function getLiveAnalysis(req: Request, res: Response) {
       },
       allEnemies: enemyTeam.map(serializeTarget),
       targets: selectedTargets.map(serializeTarget),
-      analysisSummary: buildNarrativeSummary(selectedTargets),
+      analysisSummary: buildNarrativeSummary(selectedTargets, me, comparisons),
       enemySignals: uniqueSignals,
       recommendations,
       matchupComparisons: comparisons,

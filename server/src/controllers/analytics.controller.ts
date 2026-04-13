@@ -1103,7 +1103,6 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
           const player = match.info.participants.find((p: any) => p.puuid === puuid);
 
           if (!player) continue;
-          if (match.info.queueId !== 420 && match.info.queueId !== 440) continue;
 
           rowsToInsert.push({
             puuid,

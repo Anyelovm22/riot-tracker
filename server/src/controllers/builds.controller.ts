@@ -67,6 +67,29 @@ function getLaneOpponent(participants: any[], player: any) {
   return byRole || participants.find((p) => p.teamId !== player.teamId) || null;
 }
 
+const queueLabels: Record<number, string> = {
+  420: 'Ranked Solo/Duo',
+  440: 'Ranked Flex',
+  400: 'Normal Draft',
+  430: 'Normal Blind',
+  450: 'ARAM',
+  490: 'Quickplay',
+  1700: 'Arena',
+};
+
+function parseRunes(participant: any) {
+  const styles = participant?.perks?.styles || [];
+  const primary = styles.find((style: any) => style.description === 'primaryStyle') || styles[0];
+  const secondary = styles.find((style: any) => style.description === 'subStyle') || styles[1];
+
+  return {
+    primaryStyleId: primary?.style ?? null,
+    secondaryStyleId: secondary?.style ?? null,
+    primaryPerkIds: (primary?.selections || []).map((selection: any) => selection.perk).filter(Boolean),
+    secondaryPerkIds: (secondary?.selections || []).map((selection: any) => selection.perk).filter(Boolean),
+  };
+}
+
 export async function getChampionBuildInsights(req: Request, res: Response) {
   try {
     const champion = String(req.query.champion || '').trim();
@@ -122,8 +145,15 @@ export async function getChampionBuildInsights(req: Request, res: Response) {
           role: participant.individualPosition || 'UNKNOWN',
           win: !!participant.win,
           kda: `${participant.kills}/${participant.deaths}/${participant.assists}`,
+          kills: participant.kills,
+          deaths: participant.deaths,
+          assists: participant.assists,
+          cs: (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0),
+          summonerSpells: [participant.summoner1Id, participant.summoner2Id].filter(Boolean),
           opponentChampion: opponent?.championName || 'Unknown',
+          queueLabel: queueLabels[match.info.queueId] || `Queue ${match.info.queueId}`,
           items: [participant.item0, participant.item1, participant.item2, participant.item3, participant.item4, participant.item5].filter(Boolean),
+          runes: parseRunes(participant),
         });
 
         if (proMatches.length >= 35) break;
@@ -168,6 +198,60 @@ export async function getChampionBuildInsights(req: Request, res: Response) {
         name: items[String(itemId)]?.name || `item ${itemId}`,
       }));
 
+    const roleStatsMap = new Map<string, { games: number; wins: number }>();
+    const runePageMap = new Map<string, { games: number; wins: number; primaryStyleId: number | null; secondaryStyleId: number | null }>();
+    const spellComboMap = new Map<string, { games: number; wins: number; spells: number[] }>();
+
+    for (const match of proMatches) {
+      const roleKey = match.role || 'UNKNOWN';
+      const roleEntry = roleStatsMap.get(roleKey) || { games: 0, wins: 0 };
+      roleEntry.games += 1;
+      if (match.win) roleEntry.wins += 1;
+      roleStatsMap.set(roleKey, roleEntry);
+
+      const runeKey = `${match.runes?.primaryStyleId || 'none'}-${match.runes?.secondaryStyleId || 'none'}`;
+      const runeEntry = runePageMap.get(runeKey) || {
+        games: 0,
+        wins: 0,
+        primaryStyleId: match.runes?.primaryStyleId || null,
+        secondaryStyleId: match.runes?.secondaryStyleId || null,
+      };
+      runeEntry.games += 1;
+      if (match.win) runeEntry.wins += 1;
+      runePageMap.set(runeKey, runeEntry);
+
+      const spells = (match.summonerSpells || []).slice().sort((a: number, b: number) => a - b);
+      const spellKey = spells.join('-');
+      const spellEntry = spellComboMap.get(spellKey) || { games: 0, wins: 0, spells };
+      spellEntry.games += 1;
+      if (match.win) spellEntry.wins += 1;
+      spellComboMap.set(spellKey, spellEntry);
+    }
+
+    const roleBuilds = [...roleStatsMap.entries()]
+      .map(([role, stats]) => ({
+        role,
+        games: stats.games,
+        winRate: Number(((stats.wins / Math.max(1, stats.games)) * 100).toFixed(1)),
+      }))
+      .sort((a, b) => b.games - a.games);
+
+    const topRunePages = [...runePageMap.values()]
+      .sort((a, b) => b.games - a.games)
+      .slice(0, 5)
+      .map((entry) => ({
+        ...entry,
+        winRate: Number(((entry.wins / Math.max(1, entry.games)) * 100).toFixed(1)),
+      }));
+
+    const topSummonerSpells = [...spellComboMap.values()]
+      .sort((a, b) => b.games - a.games)
+      .slice(0, 5)
+      .map((entry) => ({
+        ...entry,
+        winRate: Number(((entry.wins / Math.max(1, entry.games)) * 100).toFixed(1)),
+      }));
+
     return res.json({
       champion,
       versusChampion: versusChampion || null,
@@ -177,6 +261,9 @@ export async function getChampionBuildInsights(req: Request, res: Response) {
         .slice(0, 20),
       topBuilds,
       recommendedItems,
+      roleBuilds,
+      topRunePages,
+      topSummonerSpells,
     });
   } catch (error: any) {
     return res.status(error?.response?.status || 500).json({

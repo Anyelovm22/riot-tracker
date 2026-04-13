@@ -319,8 +319,6 @@ export async function getMatchHistory(req: Request, res: Response) {
       };
     });
 
-    normalized = normalized.filter((match) => match.queueId === 420 || match.queueId === 440);
-
     if (queueId) {
       normalized = normalized.filter((match) => match.queueId === queueId);
     }

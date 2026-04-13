@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import BackButton from '../components/common/BackButton';
 import { fetchChampions } from '../services/champions';
+import { useNavigate } from 'react-router-dom';
 
 export default function ChampionPage() {
+  const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -120,7 +122,8 @@ export default function ChampionPage() {
                 {filteredChampions.map((champ: any) => (
                   <div
                     key={champ.id}
-                    className="card-hover group rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"
+                    className="card-hover group cursor-pointer rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"
+                    onClick={() => navigate(`/builds/${encodeURIComponent(champ.name)}`)}
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-tertiary)] text-lg font-bold text-[var(--text-muted)] transition-colors group-hover:from-yellow-500/20 group-hover:to-amber-500/20 group-hover:text-yellow-400">

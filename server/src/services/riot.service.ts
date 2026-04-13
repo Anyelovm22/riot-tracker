@@ -149,6 +149,24 @@ export async function getLeagueEntriesByPuuid(puuid: string, platform: string) {
   );
 }
 
+export async function getEliteLeagueEntries(
+  platform: string,
+  queue = 'RANKED_SOLO_5x5',
+  tier = 'CHALLENGER',
+  division = 'I',
+  page = 1
+) {
+  const client = riotClient(getPlatformBase(platform));
+  return riotGetWithRetry<any[]>(
+    client,
+    `/lol/league-exp/v4/entries/${encodeURIComponent(queue)}/${encodeURIComponent(tier)}/${encodeURIComponent(division)}`,
+    {
+      params: { page },
+    },
+    4
+  );
+}
+
 export async function getActiveGameBySummonerId(
   summonerId: string,
   platform: string

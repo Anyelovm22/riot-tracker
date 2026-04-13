@@ -137,6 +137,8 @@ type BuildAdvice = {
   fullBuildTips: string[];
 };
 
+type DecayCandidate = BuildAdvice['decayCandidates'][number];
+
 type LiveCoach = {
   status: 'ahead' | 'even' | 'behind';
   now: string[];
@@ -631,6 +633,7 @@ function analyzeEnemyBuild(player: LivePlayer): EnemyBuildProfile {
 
 function detectEnemySignals(player: LivePlayer): EnemySignal[] {
   const itemNames = (player.items || []).map((item) => normalizeText(item.displayName));
+  const itemIds = new Set((player.items || []).map((item) => safeNumber(item.itemID, 0)).filter(Boolean));
   const signals: EnemySignal[] = [];
 
   const pushSignal = (
@@ -644,15 +647,15 @@ function detectEnemySignals(player: LivePlayer): EnemySignal[] {
     }
   };
 
-  if (itemNames.some((name) => name.includes('serrated dirk'))) {
+  if (itemNames.some((name) => name.includes('serrated dirk')) || itemIds.has(3134)) {
     pushSignal('early_ad_burst', 'Serrated Dirk', 'alta', 'El rival ya mostró burst AD temprano.');
   }
 
-  if (itemNames.some((name) => name.includes('caulfield'))) {
+  if (itemNames.some((name) => name.includes('caulfield')) || itemIds.has(3133)) {
     pushSignal('ad_spike_setup', 'Caulfield', 'media', 'El rival va camino a spike AD de midgame.');
   }
 
-  if (itemNames.some((name) => name.includes('blade of the ruined king'))) {
+  if (itemNames.some((name) => name.includes('blade of the ruined king')) || itemIds.has(3153)) {
     pushSignal(
       'anti_hp_duelist',
       'Blade of the Ruined King',
@@ -661,7 +664,7 @@ function detectEnemySignals(player: LivePlayer): EnemySignal[] {
     );
   }
 
-  if (itemNames.some((name) => name.includes('liandry'))) {
+  if (itemNames.some((name) => name.includes('liandry')) || itemIds.has(6653)) {
     pushSignal(
       'anti_tank_ap',
       'Tormento de Liandry',
@@ -670,23 +673,23 @@ function detectEnemySignals(player: LivePlayer): EnemySignal[] {
     );
   }
 
-  if (itemNames.some((name) => name.includes('nashor'))) {
+  if (itemNames.some((name) => name.includes('nashor')) || itemIds.has(3115)) {
     pushSignal('ap_onhit', 'Nashor’s Tooth', 'media', 'El rival está entrando en DPS AP/on-hit.');
   }
 
-  if (itemNames.some((name) => name.includes('infinity edge'))) {
+  if (itemNames.some((name) => name.includes('infinity edge')) || itemIds.has(3031)) {
     pushSignal('crit_spike', 'Infinity Edge', 'alta', 'El rival ya tiene un spike fuerte de crítico.');
   }
 
-  if (itemNames.some((name) => name.includes('collector'))) {
+  if (itemNames.some((name) => name.includes('collector')) || itemIds.has(6676)) {
     pushSignal('execute_burst', 'The Collector', 'alta', 'El rival tiene burst y ejecución más peligrosa.');
   }
 
-  if (itemNames.some((name) => name.includes('heartsteel'))) {
+  if (itemNames.some((name) => name.includes('heartsteel')) || itemIds.has(3084)) {
     pushSignal('hp_stacking', 'Heartsteel', 'media', 'El rival está escalando a mucha vida.');
   }
 
-  if (itemNames.some((name) => name.includes('black cleaver'))) {
+  if (itemNames.some((name) => name.includes('black cleaver')) || itemIds.has(3071)) {
     pushSignal(
       'armor_shred',
       'Black Cleaver',
@@ -695,7 +698,7 @@ function detectEnemySignals(player: LivePlayer): EnemySignal[] {
     );
   }
 
-  if (itemNames.some((name) => name.includes('riftmaker'))) {
+  if (itemNames.some((name) => name.includes('riftmaker')) || itemIds.has(4633)) {
     pushSignal(
       'ap_sustain',
       'Riftmaker',
@@ -704,7 +707,7 @@ function detectEnemySignals(player: LivePlayer): EnemySignal[] {
     );
   }
 
-  if (itemNames.some((name) => name.includes('sunfire'))) {
+  if (itemNames.some((name) => name.includes('sunfire')) || itemIds.has(3068)) {
     pushSignal(
       'frontline_sunfire',
       'Sunfire Aegis',
@@ -713,7 +716,7 @@ function detectEnemySignals(player: LivePlayer): EnemySignal[] {
     );
   }
 
-  if (itemNames.some((name) => name.includes('bramble vest'))) {
+  if (itemNames.some((name) => name.includes('bramble vest')) || itemIds.has(3076)) {
     pushSignal(
       'antiheal_armor',
       'Bramble Vest',
@@ -838,6 +841,20 @@ function dedupeRecommendations(items: RecommendedItem[]) {
     seen.add(item.itemId);
     return true;
   });
+}
+
+function mergeRecommendationSets(recommendations: Recommendation[]) {
+  const merged: RecommendedItem[] = [];
+
+  for (const recommendation of recommendations) {
+    for (const item of recommendation.items || []) {
+      if (!merged.some((entry) => entry.itemId === item.itemId)) {
+        merged.push(item);
+      }
+    }
+  }
+
+  return merged;
 }
 
 function buildProRecommendations(
@@ -1237,6 +1254,33 @@ function buildProRecommendations(
   const deduped = dedupeRecommendations(result);
 
   if (!deduped.length) {
+    const enemyProfile = enemy ? analyzeEnemyBuild(enemy) : null;
+
+    if (
+      enemyProfile?.damageType === 'AD' &&
+      !alreadyOwnItem(ownedItems, ITEM_DB.platedSteelcaps)
+    ) {
+      deduped.push({
+        itemId: ITEM_DB.platedSteelcaps.id,
+        name: ITEM_DB.platedSteelcaps.name,
+        why: 'El mayor daño mostrado es físico; esta compra te da valor inmediato.',
+        priority: 'media',
+        counters: ['AD'],
+      });
+    }
+
+    if (
+      enemyProfile?.damageType === 'AP' &&
+      !alreadyOwnItem(ownedItems, ITEM_DB.mercs)
+    ) {
+      deduped.push({
+        itemId: ITEM_DB.mercs.id,
+        name: ITEM_DB.mercs.name,
+        why: 'El rival está priorizando daño mágico; necesitas resistencia mágica temprana.',
+        priority: 'media',
+        counters: ['AP'],
+      });
+    }
     if (myClass === 'mage') {
       if (!alreadyOwnItem(ownedItems, ITEM_DB.zhonyas)) {
         deduped.push({
@@ -1265,6 +1309,55 @@ function buildProRecommendations(
           counters: ['general'],
         });
       }
+      } else if (myClass === 'support') {
+      if (!alreadyOwnItem(ownedItems, ITEM_DB.mercs)) {
+        deduped.push({
+          itemId: ITEM_DB.mercs.id,
+          name: ITEM_DB.mercs.name,
+          why: 'Como soporte, te ayuda a reposicionarte y sobrevivir control enemigo.',
+          priority: 'media',
+          counters: ['control', 'AP'],
+        });
+      } else if (!alreadyOwnItem(ownedItems, ITEM_DB.zhonyas)) {
+        deduped.push({
+          itemId: ITEM_DB.zhonyas.id,
+          name: ITEM_DB.zhonyas.name,
+          why: 'Excelente compra defensiva universal cuando no hay una señal dominante.',
+          priority: 'media',
+          counters: ['general'],
+        });
+      }
+    } else {
+      if (!alreadyOwnItem(ownedItems, ITEM_DB.guardianAngel)) {
+        deduped.push({
+          itemId: ITEM_DB.guardianAngel.id,
+          name: ITEM_DB.guardianAngel.name,
+          why: 'Compra segura para no regalar kills cuando el análisis aún no ve un counter claro.',
+          priority: 'baja',
+          counters: ['general'],
+        });
+      }
+    }
+  }
+
+  if (!deduped.length) {
+    const emergencyPool = [
+      ITEM_DB.platedSteelcaps,
+      ITEM_DB.mercs,
+      ITEM_DB.zhonyas,
+      ITEM_DB.guardianAngel,
+      ITEM_DB.jaksho,
+    ];
+
+    const fallback = emergencyPool.find((item) => !alreadyOwnItem(ownedItems, item));
+    if (fallback) {
+      deduped.push({
+        itemId: fallback.id,
+        name: fallback.name,
+        why: 'No hay señales suficientes, pero necesitas un spike defensivo inmediato para pelear mejor.',
+        priority: 'baja',
+        counters: ['general'],
+      });
     }
   }
 
@@ -1332,31 +1425,27 @@ function getDecayCandidates(
   const isBehind = (comparison?.diff.gold ?? 0) <= -700 || (comparison?.diff.level ?? 0) < 0;
   const enemySignals = enemy ? detectEnemySignals(enemy) : [];
 
-  const candidates = items
+  const candidates: DecayCandidate[] = items
     .filter((item) => item.itemID)
-    .flatMap((item) => {
-      const name = normalizeText(item.displayName);
+    .flatMap<DecayCandidate>((item) => {
+        const name = normalizeText(item.displayName);
 
       if (name.includes('doran') || name.includes('cull')) {
-        return [
-          {
-            item: item.displayName,
-            slot: item.slot,
-            reason: 'Item de early game: ya no escala tan bien para peleas de mid/late.',
-            urgency: 'media' as const,
-          },
-        ];
+        return {
+          item: item.displayName,
+          slot: item.slot,
+          reason: 'Item de early game: ya no escala tan bien para peleas de mid/late.',
+          urgency: 'media',
+        };
       }
 
       if ((name.includes('potion') || name.includes('galleta')) && items.length >= 4) {
-        return [
-          {
-            item: item.displayName,
-            slot: item.slot,
-            reason: 'Valor bajo en este momento; mejor convertir ese slot en spike real.',
-            urgency: 'alta' as const,
-          },
-        ];
+        return {
+          item: item.displayName,
+          slot: item.slot,
+          reason: 'Valor bajo en este momento; mejor convertir ese slot en spike real.',
+          urgency: 'alta',
+        };
       }
 
       if (name.includes('executioner') || name.includes('oblivion orb')) {
@@ -1364,14 +1453,12 @@ function getDecayCandidates(
           ['ap_sustain', 'anti_hp_duelist'].includes(signal.tag)
         );
         if (!enemyHasSustain && !isBehind) {
-          return [
-            {
-              item: item.displayName,
-              slot: item.slot,
-              reason: 'El rival no está mostrando tanta curación; este slot puede rendir más en stats directos.',
-              urgency: 'media' as const,
-            },
-          ];
+           return {
+            item: item.displayName,
+            slot: item.slot,
+            reason: 'El rival no está mostrando tanta curación; este slot puede rendir más en stats directos.',
+            urgency: 'media',
+          };
         }
       }
 
@@ -1730,13 +1817,45 @@ export async function getLiveAnalysis(req: Request, res: Response) {
 
     const comparisons = selectedTargets.map((target) => buildComparison(me, target));
     const primaryTarget = selectedTargets[0] || null;
-    const primarySignals = primaryTarget ? detectEnemySignals(primaryTarget) : [];
-    const recommendations = buildProRecommendations(me, primaryTarget, comparisons[0] || null);
+    const signalSourceTargets = mode === 'team' ? selectedTargets : primaryTarget ? [primaryTarget] : [];
+    const primarySignals = signalSourceTargets.flatMap((target) => detectEnemySignals(target));
+    const uniqueSignals = primarySignals.filter(
+      (signal, index, list) =>
+        list.findIndex((current) => current.tag === signal.tag && current.sourceItem === signal.sourceItem) === index
+    );
+
+    const recommendations =
+      mode === 'team'
+        ? (() => {
+            const fromAll = selectedTargets.map((target, index) =>
+              buildProRecommendations(me, target, comparisons[index] || null)
+            );
+            const merged = mergeRecommendationSets(fromAll.flat());
+            return merged.length
+              ? [
+                  {
+                    key: 'team-counter',
+                    title: 'Counter recomendado vs team enemigo',
+                    reason:
+                      'La recomendación integra señales de items y spikes detectados en varios rivales.',
+                    items: merged.slice(0, 6),
+                  },
+                ]
+              : [];
+          })()
+        : buildProRecommendations(me, primaryTarget, comparisons[0] || null);
 
     const initialBuildAdvice = buildBuildAdvice(me, primaryTarget);
     const sellCandidates = getSellCandidates(me.items || []);
     const replaceSuggestions = initialBuildAdvice.replaceSuggestions;
-    const decayCandidates = getDecayCandidates(me, primaryTarget, comparisons[0] || null);
+    const targetForBuildAdvice =
+      mode === 'team'
+        ? selectedTargets
+            .slice()
+            .sort((a, b) => safeNumber(b.scores?.gold, 0) - safeNumber(a.scores?.gold, 0))[0] || null
+        : primaryTarget;
+
+    const decayCandidates = getDecayCandidates(me, targetForBuildAdvice, comparisons[0] || null);
 
     const buildAdvice: BuildAdvice = {
       sellCandidates,
@@ -1749,7 +1868,7 @@ export async function getLiveAnalysis(req: Request, res: Response) {
         ...initialBuildAdvice.fullBuildTips,
       ],
     };
-    const coach = buildLiveCoach(me, primaryTarget, comparisons[0] || null, buildAdvice);
+     const coach = buildLiveCoach(me, targetForBuildAdvice, comparisons[0] || null, buildAdvice);
 
     return res.json({
       mode,
@@ -1768,7 +1887,7 @@ export async function getLiveAnalysis(req: Request, res: Response) {
       allEnemies: enemyTeam.map(serializeTarget),
       targets: selectedTargets.map(serializeTarget),
       analysisSummary: buildNarrativeSummary(selectedTargets),
-      enemySignals: primarySignals,
+      enemySignals: uniqueSignals,
       recommendations,
       matchupComparisons: comparisons,
       adaptiveTips: buildAdaptiveTips(me, primaryTarget, comparisons[0] || null),

@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import BackButton from '../components/common/BackButton';
 import { fetchLiveAnalysis } from '../services/liveAnalysis';
+import {
+  getChampionIconUrl,
+  getItemIconUrl,
+  getLatestDdragonVersion,
+} from '../utils/ddragonVersion';
 import type {
   LiveAnalysisResponse,
   MatchupComparison,
@@ -25,6 +30,7 @@ export default function LiveAnalyzePage() {
   const [refreshCountdown, setRefreshCountdown] = useState(AUTO_REFRESH_SECONDS);
   const [error, setError] = useState('');
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+  const [ddragonVersion, setDdragonVersion] = useState('15.7.1');
 
   const modeRef = useRef(mode);
   const targetRef = useRef(targetRiotId);
@@ -36,9 +42,9 @@ export default function LiveAnalyzePage() {
     roleRef.current = preferredRole;
   }, [mode, targetRiotId, preferredRole]);
 
-  async function loadStaticData() {
+  async function loadStaticData(version: string) {
     const runeRes = await fetch(
-      `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/data/es_ES/runesReforged.json`
+      `https://ddragon.leagueoflegends.com/cdn/${version}/data/es_ES/runesReforged.json`
     );
 
     if (!runeRes.ok) {
@@ -106,7 +112,9 @@ export default function LiveAnalyzePage() {
       try {
         setLoading(true);
         setError('');
-        await loadStaticData();
+        const latestVersion = await getLatestDdragonVersion();
+        setDdragonVersion(latestVersion);
+        await loadStaticData(latestVersion);
         await loadAnalysis('lane', '', 'TOP');
       } catch (err: any) {
         setError(err?.message || 'No se pudo inicializar la vista');
@@ -136,14 +144,11 @@ export default function LiveAnalyzePage() {
   const enemyOptions = useMemo(() => data?.allEnemies || [], [data]);
 
   function getChampionImageByName(name?: string) {
-    if (!name) return '';
-    const safe = String(name).replace(/[\s'.]/g, '');
-    return `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/img/champion/${safe}.png`;
+    return getChampionIconUrl(ddragonVersion, name);
   }
 
   function getItemImage(itemId?: number) {
-    if (!itemId || itemId === 0) return '';
-    return `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/img/item/${itemId}.png`;
+    return getItemIconUrl(ddragonVersion, itemId);
   }
 
   function extractKeystoneId(runes: any) {
@@ -508,6 +513,19 @@ export default function LiveAnalyzePage() {
                     </ul>
                   </div>
                 </div>
+                
+                {!!data.coach?.replaceNow?.length && (
+                  <div className="mt-4 rounded-2xl bg-[var(--bg-elevated)] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Cambios inmediatos sugeridos
+                    </p>
+                    <ul className="mt-2 space-y-1.5 text-sm text-[var(--text-secondary)]">
+                      {data.coach.replaceNow.map((tip, idx) => (
+                        <li key={idx}>• {tip}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-xl">

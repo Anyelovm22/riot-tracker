@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import BackButton from '../components/common/BackButton';
 import { fetchLiveGame } from '../services/live';
 import { readStoredProfile } from '../utils/profileStorage';
+import { getLatestDdragonVersion } from '../utils/ddragonVersion';
 
 const DDRAGON_VERSION = '15.7.1';
 
@@ -28,6 +29,7 @@ export default function LivePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshCountdown, setRefreshCountdown] = useState(AUTO_REFRESH_SECONDS);
   const [error, setError] = useState('');
+  const [ddragonVersion, setDdragonVersion] = useState('15.7.1');
 
   async function load(silent = false) {
     try {
@@ -44,7 +46,7 @@ export default function LivePage() {
           platform: profile.resolvedPlatform,
         }),
         fetch(
-          `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/data/en_US/champion.json`
+          `https://ddragon.leagueoflegends.com/cdn/${ddragonVersion}/data/en_US/champion.json`
         ),
       ]);
 
@@ -77,6 +79,11 @@ export default function LivePage() {
     }
   }
 
+  
+  useEffect(() => {
+    getLatestDdragonVersion().then(setDdragonVersion);
+  }, []);
+
   useEffect(() => {
     if (!profile?.account?.puuid || !profile?.resolvedPlatform) {
       setError('No hay perfil cargado');
@@ -85,7 +92,7 @@ export default function LivePage() {
     }
 
     load();
-  }, [profile?.account?.puuid, profile?.resolvedPlatform]);
+  }, [profile?.account?.puuid, profile?.resolvedPlatform, ddragonVersion]);
 
   useEffect(() => {
     if (!profile?.account?.puuid || !profile?.resolvedPlatform) return;
@@ -106,7 +113,7 @@ export default function LivePage() {
   function getChampionImage(championId: number) {
     const champ = championMap[championId];
     if (!champ?.image?.full) return '';
-    return `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/img/champion/${champ.image.full}`;
+    return `https://ddragon.leagueoflegends.com/cdn/${ddragonVersion}/img/champion/${champ.image.full}`;
   }
 
   function getChampionName(championId: number) {

@@ -4,13 +4,19 @@ import BackButton from '../components/common/BackButton';
 import { fetchMatchDetail } from '../services/matches';
 import { readStoredProfile } from '../utils/profileStorage';
 import { getApiErrorMessage } from '../utils/httpError';
+import { getChampionIconUrl, getItemIconUrl, getLatestDdragonVersion } from '../utils/ddragonVersion';
 
 export default function MatchDetailPage() {
   const { matchId = '' } = useParams();
   const profile = readStoredProfile();
   const [data, setData] = useState<any>(null);
+  const [ddragonVersion, setDdragonVersion] = useState('15.7.1');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    getLatestDdragonVersion().then(setDdragonVersion);
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -37,7 +43,7 @@ export default function MatchDetailPage() {
     }
 
     load();
-  }, [matchId, profile?.account?.puuid, profile?.resolvedPlatform]);
+  }, [matchId, profile?.account?.puuid, profile?.resolvedPlatform, ddragonVersion]);
 
   const blueTeam = useMemo(
     () => (data?.participants || []).filter((p: any) => p.teamId === 100),
@@ -48,13 +54,16 @@ export default function MatchDetailPage() {
     [data?.participants]
   );
 
+  const formatNumber = (value: number | null | undefined) =>
+    typeof value === 'number' ? value.toLocaleString() : '—';
+
   function renderParticipant(p: any) {
     const cs = (p.totalMinionsKilled || 0) + (p.neutralMinionsKilled || 0);
     return (
       <div key={p.puuid} className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-4">
         <div className="flex items-center gap-3">
-          {p.championIcon ? (
-            <img src={p.championIcon} alt={p.championName} className="h-12 w-12 rounded-lg object-cover" />
+          {p.championIcon || p.championName ? (
+            <img src={p.championIcon || getChampionIconUrl(ddragonVersion, p.championName)} alt={p.championName} className="h-12 w-12 rounded-lg object-cover" />
           ) : (
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--bg-card)] text-xs text-[var(--text-muted)]">
               ?
@@ -79,8 +88,8 @@ export default function MatchDetailPage() {
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {p.items?.map((item: any, idx: number) =>
-            item?.icon ? (
-              <img key={`${p.puuid}-${idx}`} src={item.icon} alt={`item-${item.id}`} className="h-9 w-9 rounded-md border border-[var(--border-default)]" />
+            item?.icon || item?.id ? (
+              <img key={`${p.puuid}-${idx}`} src={item.icon || getItemIconUrl(ddragonVersion, item?.id)} alt={`item-${item.id}`} className="h-9 w-9 rounded-md border border-[var(--border-default)]" />
             ) : (
               <div key={`${p.puuid}-${idx}`} className="h-9 w-9 rounded-md border border-[var(--border-default)] bg-[var(--bg-card)]" />
             )
@@ -94,17 +103,46 @@ export default function MatchDetailPage() {
     <main className="page-shell">
       <div className="page-container space-y-6">
         <BackButton />
-        <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Detalle de Partida</h1>
-
+        <div className="rounded-3xl border border-[var(--border-default)] bg-[linear-gradient(120deg,rgba(59,130,246,0.14),rgba(14,14,14,0.85)_40%,rgba(168,85,247,0.12))] p-6">
+          <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Detalle de Partida</h1>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
+            Vista completa del rendimiento, items y contexto de ambos equipos.
+          </p>
+        </div>
         {loading ? <div className="rounded-2xl bg-[var(--bg-card)] p-6">Cargando detalle...</div> : null}
         {error ? <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-6 text-yellow-200">{error}</div> : null}
 
         {!loading && !error && data ? (
           <>
             <div className="rounded-2xl border border-[var(--border-default)] bg-gradient-to-r from-[var(--bg-card)] to-[var(--bg-elevated)] p-5 text-sm text-[var(--text-secondary)]">
-              {data.queueLabel} · {Math.floor(data.gameDuration / 60)}m · {new Date(data.gameCreation).toLocaleString()}
+              {data.queueLabel} · {Math.floor(data.gameDuration / 60)}m · {new Date(data.gameCreation).toLocaleString()}</div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+                <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Resultado</p>
+                <p className={`mt-2 text-lg font-semibold ${data.player?.win ? 'text-emerald-300' : 'text-red-300'}`}>
+                  {data.player?.win ? 'Victoria' : 'Derrota'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+                <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">KDA</p>
+                <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
+                  {data.player?.kills ?? 0}/{data.player?.deaths ?? 0}/{data.player?.assists ?? 0}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+                <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Daño a campeones</p>
+                <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
+                  {formatNumber(data.player?.totalDamageDealtToChampions)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+                <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Oro total</p>
+                <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
+                  {formatNumber(data.player?.goldEarned)}
+                </p>
+              </div>
             </div>
-{data.player ? (
+              {data.player ? (
               <div className="grid gap-4 lg:grid-cols-3">
                 <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 lg:col-span-2">
                   <h2 className="text-lg font-semibold text-[var(--text-primary)]">Tu rendimiento</h2>
@@ -117,8 +155,8 @@ export default function MatchDetailPage() {
                   <div className="mt-4 flex flex-wrap gap-2">
                     {[data.player.item0, data.player.item1, data.player.item2, data.player.item3, data.player.item4, data.player.item5, data.player.item6].map((itemId: number, idx: number) => {
                       const item = data.participants.find((p: any) => p.puuid === data.playerPuuid)?.items?.[idx];
-                      return item?.icon ? (
-                        <img key={`self-${idx}`} src={item.icon} alt={`item-${itemId}`} className="h-11 w-11 rounded-md border border-[var(--border-default)]" />
+                      return item?.icon || itemId ? (
+                        <img key={`self-${idx}`} src={item?.icon || getItemIconUrl(ddragonVersion, itemId)} alt={`item-${itemId}`} className="h-11 w-11 rounded-md border border-[var(--border-default)]" />
                       ) : (
                         <div key={`self-${idx}`} className="h-11 w-11 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)]" />
                       );

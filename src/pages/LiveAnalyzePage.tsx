@@ -13,7 +13,6 @@ import type {
   RecommendedItem,
 } from '../services/liveAnalysis';
 
-const DDRAGON_VERSION = '15.7.1';
 type RuneMap = Record<number, { id: number; name: string; icon: string }>;
 
 export default function LiveAnalyzePage() {

@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { getBuildsByChampion } from '../controllers/builds.controller';
+import { getBuildsByChampion, getChampionBuildInsights } from '../controllers/builds.controller';
 
 const router = Router();
 
 router.get('/by-champion', getBuildsByChampion);
+router.get('/champion-insights', getChampionBuildInsights);
 
 export default router;

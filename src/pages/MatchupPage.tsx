@@ -7,7 +7,7 @@ import { readCache, readCacheMeta, saveCache } from '../utils/appCache';
 import { getApiErrorMessage } from '../utils/httpError';
 import { getChampionIconUrl, getItemIconUrl, getLatestDdragonVersion } from '../utils/ddragonVersion';
 
-type QueueFilter = 'ALL' | 'RANKED_SOLO' | 'RANKED_FLEX' | 'NORMALS' | 'ARAM';
+type QueueFilter = 'ALL' | 'RANKED_SOLO' | 'RANKED_FLEX' | 'NORMALS' | 'ARAM' | 'ARENA' | 'OTRAS';
 
 type MatchPlayer = {
   championName: string;
@@ -80,7 +80,8 @@ export default function MatchupPage() {
       const data = await fetchMatchHistory({
         puuid: profile.account.puuid,
         platform: profile.resolvedPlatform,
-        count: 20,
+        count: 40,
+        all: true,
       });
 
       setMatches(data.matches || []);
@@ -111,6 +112,8 @@ export default function MatchupPage() {
       if (filter === 'RANKED_FLEX') return match.queueId === 440;
       if (filter === 'NORMALS') return [400, 430, 490].includes(match.queueId);
       if (filter === 'ARAM') return match.queueId === 450;
+      if (filter === 'ARENA') return match.queueId === 1700;
+      if (filter === 'OTRAS') return ![420, 440, 400, 430, 490, 450, 1700].includes(match.queueId);
       return true;
     });
   }, [matches, filter]);
@@ -149,6 +152,8 @@ export default function MatchupPage() {
             ['RANKED_FLEX', 'Flex'],
             ['NORMALS', 'Normals'],
             ['ARAM', 'ARAM'],
+            ['ARENA', 'Arena'],
+            ['OTRAS', 'Otras'],
           ].map(([value, label]) => (
             <button
               key={value}

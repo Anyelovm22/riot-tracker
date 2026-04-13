@@ -7,6 +7,7 @@ import MatchupPage from './pages/MatchupPage';
 import MatchDetailPage from './pages/MatchDetailPage';
 import MetaPage from './pages/MetaPage';
 import BuilderPage from './pages/BuilderPage';
+import ChampionBuildsPage from './pages/ChampionBuildsPage';
 import ChampionPage from './pages/ChampionPage';
 import LivePage from './pages/LivePage';
 import LiveAnalyzePage from './pages/LiveAnalyzePage';
@@ -53,6 +54,14 @@ export default function App() {
           element={
             <RequireProfile>
               <BuilderPage />
+            </RequireProfile>
+          }
+        />
+        <Route
+          path="/builds/:championName"
+          element={
+            <RequireProfile>
+              <ChampionBuildsPage />
             </RequireProfile>
           }
         />

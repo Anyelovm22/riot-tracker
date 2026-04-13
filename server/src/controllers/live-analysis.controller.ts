@@ -883,6 +883,13 @@ function pushRecommendation(
   priority: 'alta' | 'media' | 'baja',
   counters: string[]
 ) {
+  if (
+    [ITEM_DB.platedSteelcaps.id, ITEM_DB.mercs.id].includes(item.id) &&
+    ownedItems.some((owned) => isBootsItem(owned))
+  ) {
+    return;
+  }
+
   if (alreadyOwnItem(ownedItems, item)) return;
 
   if (!list.some((entry) => entry.itemId === item.id)) {

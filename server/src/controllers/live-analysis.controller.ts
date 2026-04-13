@@ -459,6 +459,36 @@ function alreadyOwnItem(items: LiveItem[] = [], item: { id: number; name: string
   return hasItemById(items, item.id) || hasItemByName(items, item.name);
 }
 
+function isDefensiveTankItem(itemId: number) {
+  return new Set([
+    ITEM_DB.frozenHeart.id,
+    ITEM_DB.randuin.id,
+    ITEM_DB.forceOfNature.id,
+    ITEM_DB.kaenic.id,
+    ITEM_DB.spiritVisage.id,
+    ITEM_DB.jaksho.id,
+    ITEM_DB.unendingDespair.id,
+  ]).has(itemId);
+}
+
+function canUseDefensiveTankItems(myClass: ChampionClass, role?: Role) {
+  if (myClass === 'tank' || myClass === 'bruiser') return true;
+  if (role !== 'UTILITY') return false;
+  return myClass === 'support';
+}
+
+function canRecommendItemForProfile(
+  item: { id: number; name: string },
+  myClass: ChampionClass,
+  role?: Role
+) {
+  if (isDefensiveTankItem(item.id)) {
+    return canUseDefensiveTankItems(myClass, role);
+  }
+
+  return true;
+}
+
 function analyzeEnemyBuild(player: LivePlayer): EnemyBuildProfile {
   const champ = normalizeText(player.championName);
   const itemNames = (player.items || []).map((item) => normalizeText(item.displayName));
@@ -863,6 +893,7 @@ function buildProRecommendations(
   comparison: MatchupComparison | null
 ): Recommendation[] {
   const myClass = getChampionClass(me.championName);
+  const myRole = normalizeRole(me.position);
   const result: RecommendedItem[] = [];
   const signals = enemy ? detectEnemySignals(enemy) : [];
   const ownedItems = me.items || [];
@@ -965,7 +996,10 @@ function buildProRecommendations(
     }
 
     if (signal.tag === 'anti_hp_duelist') {
-      if (!alreadyOwnItem(ownedItems, ITEM_DB.frozenHeart)) {
+      if (
+        canRecommendItemForProfile(ITEM_DB.frozenHeart, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.frozenHeart)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -974,7 +1008,10 @@ function buildProRecommendations(
           'alta',
           [signal.sourceItem, 'duelos largos']
         );
-      } else if (!alreadyOwnItem(ownedItems, ITEM_DB.randuin)) {
+      } else if (
+        canRecommendItemForProfile(ITEM_DB.randuin, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.randuin)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -987,7 +1024,10 @@ function buildProRecommendations(
     }
 
     if (signal.tag === 'crit_spike') {
-      if (!alreadyOwnItem(ownedItems, ITEM_DB.randuin)) {
+      if (
+        canRecommendItemForProfile(ITEM_DB.randuin, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.randuin)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -996,7 +1036,10 @@ function buildProRecommendations(
           'alta',
           [signal.sourceItem, 'crit']
         );
-      } else if (!alreadyOwnItem(ownedItems, ITEM_DB.frozenHeart)) {
+      } else if (
+        canRecommendItemForProfile(ITEM_DB.frozenHeart, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.frozenHeart)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -1009,7 +1052,10 @@ function buildProRecommendations(
     }
 
     if (signal.tag === 'anti_tank_ap') {
-      if (!alreadyOwnItem(ownedItems, ITEM_DB.forceOfNature)) {
+      if (
+        canRecommendItemForProfile(ITEM_DB.forceOfNature, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.forceOfNature)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -1018,7 +1064,10 @@ function buildProRecommendations(
           'alta',
           [signal.sourceItem, 'AP sostenido']
         );
-      } else if (!alreadyOwnItem(ownedItems, ITEM_DB.kaenic)) {
+      } else if (
+        canRecommendItemForProfile(ITEM_DB.kaenic, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.kaenic)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -1027,7 +1076,10 @@ function buildProRecommendations(
           'media',
           [signal.sourceItem, 'AP']
         );
-      } else if (!alreadyOwnItem(ownedItems, ITEM_DB.spiritVisage)) {
+      } else if (
+        canRecommendItemForProfile(ITEM_DB.spiritVisage, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.spiritVisage)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -1040,7 +1092,10 @@ function buildProRecommendations(
     }
 
     if (signal.tag === 'ap_onhit') {
-      if (!alreadyOwnItem(ownedItems, ITEM_DB.forceOfNature)) {
+      if (
+        canRecommendItemForProfile(ITEM_DB.forceOfNature, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.forceOfNature)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -1049,7 +1104,10 @@ function buildProRecommendations(
           'media',
           [signal.sourceItem, 'AP on-hit']
         );
-      } else if (!alreadyOwnItem(ownedItems, ITEM_DB.kaenic)) {
+      } else if (
+        canRecommendItemForProfile(ITEM_DB.kaenic, myClass, myRole) &&
+        !alreadyOwnItem(ownedItems, ITEM_DB.kaenic)
+      ) {
         pushRecommendation(
           result,
           ownedItems,
@@ -1309,7 +1367,7 @@ function buildProRecommendations(
           counters: ['general'],
         });
       }
-      } else if (myClass === 'support') {
+    } else if (myClass === 'support') {
       if (!alreadyOwnItem(ownedItems, ITEM_DB.mercs)) {
         deduped.push({
           itemId: ITEM_DB.mercs.id,
@@ -1580,6 +1638,7 @@ function buildBuildAdvice(
   enemy: LivePlayer | null
 ): BuildAdvice {
   const sellCandidates = getSellCandidates(me.items || []);
+  const decayCandidates = getDecayCandidates(me, enemy, null);
 
   const replaceSuggestions: ReplaceSuggestion[] = [
     ...getNextOwnedCounterUpgrade(me, enemy),
@@ -1620,7 +1679,7 @@ function buildBuildAdvice(
   return {
     sellCandidates,
     replaceSuggestions: replaceSuggestions.slice(0, 4),
-    decayCandidates: [],
+    decayCandidates,
     fullBuildTips,
   };
 }

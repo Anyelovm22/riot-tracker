@@ -103,10 +103,11 @@ export default function MatchDetailPage() {
     <main className="page-shell">
       <div className="page-container space-y-6">
         <BackButton />
-        <div className="rounded-3xl border border-[var(--border-default)] bg-[linear-gradient(120deg,rgba(59,130,246,0.14),rgba(14,14,14,0.85)_40%,rgba(168,85,247,0.12))] p-6">
-          <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Detalle de Partida</h1>
+        <div className="rounded-3xl border border-[var(--border-default)] bg-[linear-gradient(120deg,rgba(14,165,233,0.2),rgba(11,15,27,0.9)_45%,rgba(124,58,237,0.22))] p-7 shadow-2xl">
+          <p className="text-xs uppercase tracking-[0.18em] text-cyan-300/90">RiotTracker · Match Report</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text-primary)]">Detalle de Partida</h1>
           <p className="mt-2 text-sm text-[var(--text-secondary)]">
-            Vista completa del rendimiento, items y contexto de ambos equipos.
+            Reporte profesional de rendimiento, matchup, build y contexto completo de ambos equipos.
           </p>
         </div>
         {loading ? <div className="rounded-2xl bg-[var(--bg-card)] p-6">Cargando detalle...</div> : null}
@@ -114,28 +115,28 @@ export default function MatchDetailPage() {
 
         {!loading && !error && data ? (
           <>
-            <div className="rounded-2xl border border-[var(--border-default)] bg-gradient-to-r from-[var(--bg-card)] to-[var(--bg-elevated)] p-5 text-sm text-[var(--text-secondary)]">
+            <div className="rounded-2xl border border-[var(--border-default)] bg-gradient-to-r from-slate-900/80 to-slate-800/40 p-5 text-sm text-[var(--text-secondary)] shadow-xl">
               {data.queueLabel} · {Math.floor(data.gameDuration / 60)}m · {new Date(data.gameCreation).toLocaleString()}</div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
                 <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Resultado</p>
                 <p className={`mt-2 text-lg font-semibold ${data.player?.win ? 'text-emerald-300' : 'text-red-300'}`}>
                   {data.player?.win ? 'Victoria' : 'Derrota'}
                 </p>
               </div>
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+              <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
                 <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">KDA</p>
                 <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
                   {data.player?.kills ?? 0}/{data.player?.deaths ?? 0}/{data.player?.assists ?? 0}
                 </p>
               </div>
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4">
                 <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Daño a campeones</p>
                 <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
                   {formatNumber(data.player?.totalDamageDealtToChampions)}
                 </p>
               </div>
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
                 <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Oro total</p>
                 <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
                   {formatNumber(data.player?.goldEarned)}
@@ -144,7 +145,7 @@ export default function MatchDetailPage() {
             </div>
               {data.player ? (
               <div className="grid gap-4 lg:grid-cols-3">
-                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 lg:col-span-2">
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-xl lg:col-span-2">
                   <h2 className="text-lg font-semibold text-[var(--text-primary)]">Tu rendimiento</h2>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded-xl bg-[var(--bg-elevated)] p-3 text-sm">KDA: {data.player.kills}/{data.player.deaths}/{data.player.assists}</div>
@@ -164,7 +165,7 @@ export default function MatchDetailPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6">
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-xl">
                   <h3 className="font-semibold text-[var(--text-primary)]">Feedback inteligente</h3>
                   {data.aiRetrospective ? (
                     <div className="mt-3 max-h-64 overflow-y-auto rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm leading-relaxed text-cyan-100 whitespace-pre-wrap">
@@ -211,6 +212,24 @@ export default function MatchDetailPage() {
                   <div className="rounded-xl bg-[var(--bg-elevated)] p-3">Eventos objetivo: {data.timelineSummary.objectiveEvents}</div>
                   <div className="rounded-xl bg-[var(--bg-elevated)] p-3">Muertes en río: {data.timelineSummary.riskyRiverDeaths}</div>
                 </div>
+              </div>
+            ) : null}
+
+            {data.laneReference ? (
+              <div className="rounded-2xl border border-violet-500/30 bg-violet-500/10 p-5">
+                <h3 className="font-semibold text-violet-100">Referencia de matchup de línea</h3>
+                <p className="mt-1 text-sm text-violet-200">
+                  {data.laneReference.riotId} · {data.laneReference.championName} · {data.laneReference.role}
+                </p>
+                <div className="mt-3 grid gap-3 text-sm text-violet-100 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl bg-black/20 p-3">KDA: {data.laneReference.kda}</div>
+                  <div className="rounded-xl bg-black/20 p-3">CS/min: {data.laneReference.csPerMin}</div>
+                  <div className="rounded-xl bg-black/20 p-3">Daño: {formatNumber(data.laneReference.damage)}</div>
+                  <div className="rounded-xl bg-black/20 p-3">Oro: {formatNumber(data.laneReference.gold)}</div>
+                </div>
+                <p className="mt-3 text-xs text-violet-100/80">
+                  Items rival: {(data.laneReference.items || []).join(', ') || 'N/A'}
+                </p>
               </div>
             ) : null}
 

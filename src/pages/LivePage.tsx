@@ -5,8 +5,6 @@ import { fetchLiveGame } from '../services/live';
 import { readStoredProfile } from '../utils/profileStorage';
 import { getLatestDdragonVersion } from '../utils/ddragonVersion';
 
-const DDRAGON_VERSION = '15.7.1';
-
 type ChampionData = {
   id: string;
   key: string;

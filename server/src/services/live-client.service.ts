@@ -1,8 +1,9 @@
 import axios from 'axios';
 import https from 'https';
+import { env } from '../config/env';
 
 const liveClient = axios.create({
-  baseURL: 'https://127.0.0.1:2999/liveclientdata',
+  baseURL: env.LIVE_CLIENT_BASE_URL,
   httpsAgent: new https.Agent({
     rejectUnauthorized: false,
   }),
@@ -10,6 +11,11 @@ const liveClient = axios.create({
 });
 
 export async function getLiveClientAllGameData() {
+  if (!env.LIVE_CLIENT_ENABLED) {
+    const error = new Error('Live Client disabled by configuration');
+    (error as any).code = 'LIVE_CLIENT_DISABLED';
+    throw error;
+  }
   const { data } = await liveClient.get('/allgamedata');
   return data;
 }

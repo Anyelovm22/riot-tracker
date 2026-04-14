@@ -1,6 +1,32 @@
 import axios from 'axios';
 import { env } from '../config/env';
 
+type MemoryCacheEntry<T> = {
+  value: T;
+  expiresAt: number;
+};
+
+const memoryCache = new Map<string, MemoryCacheEntry<any>>();
+
+function getCache<T>(key: string): T | null {
+  const entry = memoryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return entry.value as T;
+}
+
+function setCache<T>(key: string, value: T, ttlMs: number) {
+  memoryCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
+const DDRAGON_VERSION_TTL_MS = 1000 * 60 * 30; // 30 min
+const DDRAGON_DATA_TTL_MS = 1000 * 60 * 60 * 6; // 6 horas
 const regionalClusters: Record<string, string> = {
   la1: 'americas',
   la2: 'americas',
@@ -303,15 +329,22 @@ export async function getMatchTimelineById(matchId: string, platform: string) {
 }
 
 export async function getLatestDdragonVersion() {
+  const cached = getCache<string>('ddragon:version');
+  if (cached) return cached;
+
   const { data } = await axios.get(
     'https://ddragon.leagueoflegends.com/api/versions.json',
     { timeout: 15000 }
   );
 
-  return data[0];
+  const version = data[0];
+  setCache('ddragon:version', version, DDRAGON_VERSION_TTL_MS);
+  return version;
 }
 
 export async function getChampionList() {
+  const cached = getCache<any>('ddragon:champion-list');
+  if (cached) return cached;
   const version = await getLatestDdragonVersion();
 
   const { data } = await axios.get(
@@ -319,24 +352,34 @@ export async function getChampionList() {
     { timeout: 15000 }
   );
 
-  return {
-    version,
+  const payload = {
+      version,
     champions: Object.values(data.data),
   };
+  setCache('ddragon:champion-list', payload, DDRAGON_DATA_TTL_MS);
+  return payload;
 }
 
 export async function getChampionById(championId: string) {
   const version = await getLatestDdragonVersion();
+  const cacheKey = `ddragon:champion:${version}:${championId}`;
+  const cached = getCache<any>(cacheKey);
+  if (cached) return cached;
 
   const { data } = await axios.get(
     `https://ddragon.leagueoflegends.com/cdn/${version}/data/en_US/champion/${encodeURIComponent(championId)}.json`,
     { timeout: 15000 }
   );
 
-  return data.data[championId];
+  const payload = data.data[championId];
+  setCache(cacheKey, payload, DDRAGON_DATA_TTL_MS);
+  return payload;
 }
 
 export async function getItemData() {
+  const cached = getCache<any>('ddragon:item-data');
+  if (cached) return cached;
+
   const version = await getLatestDdragonVersion();
 
   const { data } = await axios.get(
@@ -344,10 +387,15 @@ export async function getItemData() {
     { timeout: 15000 }
   );
 
-  return { version, items: data.data };
+  const payload = { version, items: data.data };
+  setCache('ddragon:item-data', payload, DDRAGON_DATA_TTL_MS);
+  return payload;
 }
 
 export async function getSummonerSpellData() {
+  const cached = getCache<any>('ddragon:summoner-spells');
+  if (cached) return cached;
+
   const version = await getLatestDdragonVersion();
 
   const { data } = await axios.get(
@@ -355,5 +403,7 @@ export async function getSummonerSpellData() {
     { timeout: 15000 }
   );
 
-  return { version, spells: data.data };
+  const payload = { version, spells: data.data };
+  setCache('ddragon:summoner-spells', payload, DDRAGON_DATA_TTL_MS);
+  return payload;
 }

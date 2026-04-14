@@ -18,4 +18,7 @@ export const env = {
   OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'llama3.2:3b',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+  LIVE_CLIENT_ENABLED: process.env.LIVE_CLIENT_ENABLED === 'true',
+  LIVE_CLIENT_BASE_URL:
+    process.env.LIVE_CLIENT_BASE_URL || 'https://127.0.0.1:2999/liveclientdata',
 };

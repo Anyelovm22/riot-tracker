@@ -2036,10 +2036,23 @@ export async function getLiveAnalysis(req: Request, res: Response) {
     console.error('LIVE ANALYSIS ERROR:', error?.message || error);
 
     const message = String(error?.message || '');
+    const code = String(error?.code || '');
+
+    if (code === 'LIVE_CLIENT_DISABLED') {
+      return res.status(503).json({
+        message:
+          'El análisis live local está desactivado en este deploy. Para usarlo, activa LIVE_CLIENT_ENABLED=true en un entorno donde esté corriendo LoL en la misma máquina.',
+        code: 'LIVE_CLIENT_DISABLED',
+      });
+    }
 
     if (
       message.includes('ECONNREFUSED 127.0.0.1:2999') ||
-      message.includes('connect ECONNREFUSED')
+      message.includes('connect ECONNREFUSED') ||
+      message.includes('EHOSTUNREACH') ||
+      message.includes('ENETUNREACH') ||
+      message.includes('CERT') ||
+      message.includes('self-signed')
     ) {
       return res.status(503).json({
         message:

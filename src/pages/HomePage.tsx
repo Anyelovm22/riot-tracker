@@ -79,6 +79,17 @@ const featureCards = [
   { title: 'Champions', desc: 'Catalogo de campeones.', icon: 'M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
 ];
 
+const pagePrefetchers: Record<string, () => Promise<unknown>> = {
+  '/matches': () => import('./MatchupPage'),
+  '/matches/:matchId': () => import('./MatchDetailPage'),
+  '/meta': () => import('./MetaPage'),
+  '/live': () => import('./LivePage'),
+  '/builds': () => import('./BuilderPage'),
+  '/builds/:championName': () => import('./ChampionBuildsPage'),
+  '/champions': () => import('./ChampionPage'),
+  '/live/analyze': () => import('./LiveAnalyzePage'),
+};
+
 export default function HomePage() {
   const [searchValue, setSearchValue] = useState('');
   const [region, setRegion] = useState('la2');
@@ -87,6 +98,12 @@ export default function HomePage() {
   const [summary, setSummary] = useState<any>(() => readStoredProfile());
 
   const navigate = useNavigate();
+
+  function prefetchRoute(path: string) {
+    const prefetch = pagePrefetchers[path];
+    if (!prefetch) return;
+    void prefetch();
+  }
 
   async function handleSearch() {
     try {
@@ -295,6 +312,9 @@ export default function HomePage() {
                 <button
                   key={card.key}
                   onClick={() => navigate(card.path)}
+                  onMouseEnter={() => prefetchRoute(card.path)}
+                  onFocus={() => prefetchRoute(card.path)}
+                  onTouchStart={() => prefetchRoute(card.path)}
                   className="group relative overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 text-left transition-all hover:border-[var(--border-hover)] hover:shadow-lg"
                 >
                   <div className={`absolute inset-0 bg-gradient-to-br ${card.color} opacity-0 transition-opacity group-hover:opacity-5`} />

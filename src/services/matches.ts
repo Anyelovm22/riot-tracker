@@ -6,8 +6,8 @@ export async function fetchMatchHistory(params: {
   count?: number;
   all?: boolean;
   queueId?: number;
-}) {
-  const { data } = await api.get('/matches/history', { params });
+}, signal?: AbortSignal) {
+  const { data } = await api.get('/matches/history', { params, signal });
   return data;
 }
 

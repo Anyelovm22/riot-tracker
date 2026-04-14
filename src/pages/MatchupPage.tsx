@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import BackButton from '../components/common/BackButton';
 import { useNavigate } from 'react-router-dom';
 import { fetchMatchHistory } from '../services/matches';
@@ -66,8 +66,16 @@ export default function MatchupPage() {
   const [loading, setLoading] = useState(!cached);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const requestRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function loadMatches(force = false) {
+    abortRef.current?.abort();
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       if (force) {
         setRefreshing(true);
@@ -82,11 +90,18 @@ export default function MatchupPage() {
         platform: profile.resolvedPlatform,
         count: 40,
         all: true,
-      });
+      }, controller.signal);
+
+      if (requestId !== requestRef.current) {
+        return;
+      }
 
       setMatches(data.matches || []);
       saveCache('matches', data);
     } catch (err: any) {
+      if (err?.name === 'CanceledError' || err?.name === 'AbortError') {
+        return;
+      }
       setError(getApiErrorMessage(err, 'No se pudo cargar el historial'));
     } finally {
       setLoading(false);
@@ -102,7 +117,13 @@ export default function MatchupPage() {
     if (!cached) {
       loadMatches(false);
     }
-  }, [ddragonVersion]);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
   
   const filteredMatches = useMemo(() => {
     if (filter === 'ALL') return matches;
@@ -208,6 +229,8 @@ export default function MatchupPage() {
                             <img
                               src={player.championIcon || getChampionIconUrl(ddragonVersion, player?.championName)}
                               alt={player.championName}
+                              loading="lazy"
+                              decoding="async"
                               className="h-16 w-16 rounded-2xl border border-zinc-700 object-cover"
                             />
                           ) : (
@@ -248,6 +271,8 @@ export default function MatchupPage() {
                                   key={`${match.matchId}-${idx}`}
                                   src={item.icon || getItemIconUrl(ddragonVersion, item?.id)}
                                   alt={`Item ${item.id}`}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="h-10 w-10 rounded-lg border border-zinc-700 bg-zinc-900"
                                 />
                               ) : (

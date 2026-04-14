@@ -24,27 +24,117 @@ type RetrospectiveInput = {
   } | null;
 };
 
-function generateRuleBasedRetrospective(input: RetrospectiveInput) {
-  const sections: string[] = [];
-  sections.push(`1) Fortalezas:\n- ${input.result} en ${input.queueLabel} con ${input.championName} (${input.role}).`);
-  sections.push(`2) Ajustes clave:\n- KDA ${input.kda}, CS/min ${input.csPerMin}, Vision/min ${input.visionPerMin}, daño ${input.damage}, oro ${input.gold}. Prioriza decisiones de riesgo bajo y mejor timing de objetivos.`);
+type NumericComparison = {
+  label: string;
+  mine: number;
+  enemy?: number | null;
+};
 
-  if (input.laneEnemy) {
-    sections.push(
-      `3) Matchup de línea:\n- Rival ${input.laneEnemy.championName} (${input.laneEnemy.role}) con KDA ${input.laneEnemy.kda}, CS/min ${input.laneEnemy.csPerMin}, daño ${input.laneEnemy.damage}, oro ${input.laneEnemy.gold}.\n- Items rival: ${input.laneEnemy.itemNames.slice(0, 6).join(', ') || 'N/A'}.`
+function formatNumber(value: number, digits = 2) {
+  return Number.isFinite(value) ? Number(value.toFixed(digits)) : 0;
+}
+
+function parseKdaParts(kda: string) {
+  const [killsRaw, deathsRaw, assistsRaw] = String(kda || '0/0/0').split('/');
+  const kills = Number(killsRaw) || 0;
+  const deaths = Number(deathsRaw) || 0;
+  const assists = Number(assistsRaw) || 0;
+  const ratio = deaths === 0 ? kills + assists : (kills + assists) / deaths;
+  return { kills, deaths, assists, ratio: formatNumber(ratio) };
+}
+
+function buildComparisons(input: RetrospectiveInput): NumericComparison[] {
+  const enemy = input.laneEnemy;
+
+  return [
+    { label: 'CS/min', mine: input.csPerMin, enemy: enemy?.csPerMin ?? null },
+    { label: 'Daño a campeones', mine: input.damage, enemy: enemy?.damage ?? null },
+    { label: 'Oro', mine: input.gold, enemy: enemy?.gold ?? null },
+  ];
+}
+
+function buildMetricVerdict(metric: NumericComparison) {
+  if (metric.enemy == null) return null;
+
+  const delta = formatNumber(metric.mine - metric.enemy, 1);
+  if (delta === 0) {
+    return `${metric.label}: paridad (${metric.mine} vs ${metric.enemy}).`;
+  }
+
+  return `${metric.label}: ${delta > 0 ? 'ventaja' : 'desventaja'} ${Math.abs(delta)} (${metric.mine} vs ${metric.enemy}).`;
+}
+
+function generateRuleBasedRetrospective(input: RetrospectiveInput) {
+  const kda = parseKdaParts(input.kda);
+  const enemyKda = input.laneEnemy ? parseKdaParts(input.laneEnemy.kda) : null;
+  const comparisons = buildComparisons(input).map(buildMetricVerdict).filter(Boolean) as string[];
+
+  const strengths: string[] = [];
+  const improvements: string[] = [];
+  const nextGamePlan: string[] = [];
+
+  if (kda.ratio >= 3) {
+    strengths.push(`KDA eficiente (${kda.ratio}) con ${kda.kills}/${kda.deaths}/${kda.assists}.`);
+  } else {
+    improvements.push(`KDA (${kda.ratio}) bajo el objetivo operativo (3.0). Reduce entradas sin prioridad de visión.`);
+  }
+
+  if (input.csPerMin >= 7) {
+    strengths.push(`Economía estable (${input.csPerMin} CS/min).`);
+  } else {
+    improvements.push(`CS/min (${input.csPerMin}) por debajo del ritmo recomendado. Asegura oleadas antes de rotar.`);
+  }
+
+  if (input.visionPerMin >= 1.1) {
+    strengths.push(`Control de visión correcto (${input.visionPerMin}/min).`);
+  } else {
+    improvements.push(`Visión/min (${input.visionPerMin}) baja. Compra wards de control en cada reset con objetivo cercano.`);
+  }
+
+  if (enemyKda && input.laneEnemy) {
+    const ratioDelta = formatNumber(kda.ratio - enemyKda.ratio);
+    if (ratioDelta >= 0.5) {
+      strengths.push(`Superaste a ${input.laneEnemy.championName} en KDA (${kda.ratio} vs ${enemyKda.ratio}).`);
+    } else if (ratioDelta <= -0.5) {
+      improvements.push(`El rival ${input.laneEnemy.championName} te superó en KDA (${enemyKda.ratio} vs ${kda.ratio}).`);
+    }
+  }
+
+  if (input.damageTaken > 0 && input.damage / input.damageTaken < 0.9) {
+    improvements.push(
+      `Relación daño infligido/recibido desfavorable (${input.damage}/${input.damageTaken}). Ajusta ángulos de entrada y timing de cooldowns.`
     );
   }
 
-  sections.push(`4) Build:\n- Tu build final: ${input.itemNames.slice(0, 6).join(', ') || 'N/A'}.\n- Si un ítem no impactó, véndelo por una opción situacional que responda a los items del rival de línea.`);
-  sections.push(`5) Plan próxima partida:\n- Primeros 10 min: farm seguro + visión de río.\n- Min 10-20: jugar por objetivo con prioridad de línea.\n- Late: pelear sólo con visión y cooldowns.`);
-  return sections.join('\n\n');
+  nextGamePlan.push(...comparisons.slice(0, 3));
+
+  const ownBuild = input.itemNames.slice(0, 6).filter(Boolean);
+  const enemyBuild = input.laneEnemy?.itemNames?.slice(0, 6).filter(Boolean) || [];
+
+  return [
+    `1) Contexto\n- ${input.result} en ${input.queueLabel} con ${input.championName} (${input.role}).`,
+    `2) Fortalezas\n- ${(strengths.length ? strengths : ['No hubo métricas por encima del baseline en esta partida.']).join('\n- ')}`,
+    `3) Ajustes prioritarios\n- ${(improvements.length ? improvements : ['Sin déficits críticos detectados; mantén consistencia y revisa microerrores en repetición.']).join('\n- ')}`,
+    `4) Build\n- Propia: ${ownBuild.join(', ') || 'Sin datos suficientes.'}.\n- Rival de línea: ${enemyBuild.join(', ') || 'Sin datos suficientes.'}.`,
+    `5) Plan para la próxima\n- ${(nextGamePlan.length ? nextGamePlan : ['Sin comparación directa suficiente contra rival de línea.']).join('\n- ')}`,
+  ].join('\n\n');
 }
 
 export async function generateLocalAiRetrospective(input: RetrospectiveInput) {
   const prompt = `
-Eres coach de League of Legends.
-Responde en español, formato breve y profesional.
-Da: 1) Qué hiciste bien, 2) Qué mejorar, 3) Cambios de build (incluye si conviene vender algún item), 4) Plan para próxima partida.
+Eres analista competitivo de League of Legends.
+Responde en español, formato accionable y concreto.
+Reglas obligatorias:
+- No uses texto genérico.
+- Cada recomendación debe citar al menos una métrica del input.
+- Si falta información, dilo claramente; no inventes datos.
+- Prioriza recomendaciones con impacto inmediato.
+
+Estructura exacta:
+1) Fortalezas (máximo 3 bullets)
+2) Errores prioritarios (máximo 3 bullets)
+3) Ajustes de build basados en datos observados
+4) Plan early/mid/late (1 bullet por fase)
 
 Datos:
 - Resultado: ${input.result}
@@ -67,7 +157,7 @@ Datos:
 `;
 
   try {
-     if (env.AI_PROVIDER === 'rules') {
+    if (env.AI_PROVIDER === 'rules') {
       return generateRuleBasedRetrospective(input);
     }
 
@@ -79,16 +169,14 @@ Datos:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.6, maxOutputTokens: 600 },
+            generationConfig: { temperature: 0.4, maxOutputTokens: 600 },
           }),
         }
       );
 
       if (response.ok) {
         const data = await response.json();
-        const text = String(
-          data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        ).trim();
+        const text = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
         if (text) return text;
       }
     }
@@ -103,10 +191,10 @@ Datos:
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: [
-            { role: 'system', content: 'Eres coach experto de League of Legends.' },
+            { role: 'system', content: 'Eres analista de rendimiento competitivo de League of Legends.' },
             { role: 'user', content: prompt },
           ],
-          temperature: 0.6,
+          temperature: 0.4,
           max_tokens: 600,
         }),
       });
@@ -117,6 +205,7 @@ Datos:
         if (text) return text;
       }
     }
+
     const { data } = await axios.post(
       `${env.OLLAMA_URL.replace(/\/$/, '')}/api/generate`,
       {

@@ -15,6 +15,7 @@ export default function ChampionBuildsPage() {
   const [ddragonVersion, setDdragonVersion] = useState('15.7.1');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [lastLoadMs, setLastLoadMs] = useState<number | null>(null);
 
   const decodedChampion = decodeURIComponent(championName);
 
@@ -26,6 +27,7 @@ export default function ChampionBuildsPage() {
   }, []);
 
   async function loadInsights(nextVersus?: string) {
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now();
     try {
       setLoading(true);
       setError('');
@@ -33,11 +35,15 @@ export default function ChampionBuildsPage() {
         champion: decodedChampion,
         platform: profile?.resolvedPlatform || 'la1',
         versusChampion: nextVersus || undefined,
+        maxPlayers: 8,
+        maxMatchesPerPlayer: 10,
       });
       setData(result);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'No se pudo cargar el análisis de builds');
     } finally {
+      const end = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      setLastLoadMs(Math.max(0, Math.round(end - start)));
       setLoading(false);
     }
   }
@@ -48,6 +54,8 @@ export default function ChampionBuildsPage() {
   }, [decodedChampion]);
 
   const championOptions = useMemo(() => champions.map((champ: any) => champ.name), [champions]);
+  const maxRoleGames = Math.max(1, ...(data?.roleStats || []).map((row: any) => row.games || 0));
+  const maxMatchupGames = Math.max(1, ...(data?.topMatchups || []).map((row: any) => row.games || 0));
 
   return (
     <main className="page-shell">
@@ -81,6 +89,11 @@ export default function ChampionBuildsPage() {
             >
               Actualizar recomendación
             </button>
+            {lastLoadMs !== null ? (
+              <span className="text-xs text-[var(--text-muted)]">
+                Carga: {(lastLoadMs / 1000).toFixed(2)}s {data?.meta?.cached ? '· desde caché' : ''}
+              </span>
+            ) : null}
           </div>
         </section>
 
@@ -127,6 +140,92 @@ export default function ChampionBuildsPage() {
               </div>
             </section>
 
+            <section className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Items recomendados</h2>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">Frecuencia total en partidas high elo del campeón.</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {(data.recommendedItems || []).map((item: any) => (
+                    <div key={`recommended-${item.itemId}`} className="group relative">
+                      <img
+                        src={getItemIconUrl(ddragonVersion, item.itemId)}
+                        title={`${item.name} · ${item.count} partidas`}
+                        className="h-11 w-11 rounded-md border border-[var(--border-default)]"
+                      />
+                      <span className="absolute -bottom-2 -right-2 rounded-full bg-[var(--accent-primary)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        {item.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Runas más usadas</h2>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">Setup primario/secundario + keystone.</p>
+                <div className="mt-4 space-y-2">
+                  {(data.topRunes || []).map((rune: any, index: number) => (
+                    <div key={`rune-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-sm">
+                      <p className="font-medium text-[var(--text-primary)]">
+                        Keystone {rune.keystone} · Style {rune.primaryStyle}/{rune.subStyle}
+                      </p>
+                      <p className="text-[var(--text-secondary)]">
+                        {rune.games} partidas · WR {rune.winRate}%
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Gráfica por línea</h2>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">Distribución de partidas por rol (línea).</p>
+                <div className="mt-4 space-y-3">
+                  {(data.roleStats || []).map((row: any) => (
+                    <div key={`role-${row.role}`}>
+                      <div className="mb-1 flex items-center justify-between text-xs">
+                        <span className="font-medium text-[var(--text-primary)]">{row.role}</span>
+                        <span className="text-[var(--text-secondary)]">
+                          {row.games} partidas · WR {row.winRate}%
+                        </span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500"
+                          style={{ width: `${Math.max(8, (row.games / maxRoleGames) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Gráfica de matchups de línea</h2>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">Rivales más frecuentes en línea.</p>
+                <div className="mt-4 space-y-3">
+                  {(data.topMatchups || []).map((row: any) => (
+                    <div key={`matchup-${row.championName}`}>
+                      <div className="mb-1 flex items-center justify-between text-xs">
+                        <span className="font-medium text-[var(--text-primary)]">{row.championName}</span>
+                        <span className="text-[var(--text-secondary)]">
+                          {row.games} partidas · WR {row.winRate}%
+                        </span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                          style={{ width: `${Math.max(8, (row.games / maxMatchupGames) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
             <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">Partidas recientes high elo</h2>
               <div className="mt-3 space-y-3">
@@ -138,6 +237,15 @@ export default function ChampionBuildsPage() {
                     <p className="text-[var(--text-secondary)]">
                       KDA {match.kda} · LP {match.leaguePoints} · {match.win ? 'Victoria' : 'Derrota'}
                     </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {(match.items || []).map((itemId: number) => (
+                        <img
+                          key={`${match.matchId}-${itemId}`}
+                          src={getItemIconUrl(ddragonVersion, itemId)}
+                          className="h-8 w-8 rounded border border-[var(--border-default)]"
+                        />
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>

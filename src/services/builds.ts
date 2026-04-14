@@ -13,6 +13,8 @@ export async function fetchChampionBuildInsights(params: {
   champion: string;
   platform: string;
   versusChampion?: string;
+  maxPlayers?: number;
+  maxMatchesPerPlayer?: number;
 }) {
   const { data } = await api.get('/builds/champion-insights', { params });
   return data;

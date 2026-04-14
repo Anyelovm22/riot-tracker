@@ -34,6 +34,8 @@ type ProMatch = {
   spell1Casts: number;
   spell2Casts: number;
   spell3Casts: number;
+  summonerSpell1: number;
+  summonerSpell2: number;
 };
 
 type ItemAggregate = {
@@ -59,6 +61,7 @@ type ChampionInsightsPayload = {
   winRate: number;
   pickRate: number;
   minSampleSize: number;
+  availableRoles: Array<{ role: string; games: number; winRate: number }>;
   appliedFallback?: boolean;
   fallbackReason?: string;
   overview: {
@@ -75,6 +78,14 @@ type ChampionInsightsPayload = {
       keystone: number;
       games: number;
       winRate: number;
+    }>;
+    topSummonerSpells: Array<{
+      spell1Id: number;
+      spell2Id: number;
+      games: number;
+      winRate: number;
+      popularity: number;
+      sampleQualified: boolean;
     }>;
   };
   itemStats: {
@@ -103,6 +114,12 @@ type ChampionInsightsPayload = {
       winRate: number;
       popularity: number;
       sampleQualified: boolean;
+      items: Array<{ itemId: number; name: string }>;
+    }>;
+    matchupVariants: Array<{
+      versusChampion: string;
+      games: number;
+      winRate: number;
       items: Array<{ itemId: number; name: string }>;
     }>;
   };
@@ -348,7 +365,7 @@ function aggregateItemsBySlot(matches: ProMatch[], itemMap: Record<string, any>)
     [...source.entries()]
       .map(([itemId, row]) => ({
         itemId,
-        name: itemMap[String(itemId)]?.name || `item ${itemId}`,
+        name: itemMap[String(itemId)]?.name || `#${itemId}`,
         games: row.games,
         wins: row.wins,
         winRate: toPercent(row.wins, row.games),
@@ -433,6 +450,7 @@ function buildPayload({
   const runeCounts = new Map<string, { wins: number; total: number; primaryStyle: number; subStyle: number; keystone: number }>();
   const roleCounts = new Map<string, { wins: number; total: number }>();
   const matchupCounts = new Map<string, { wins: number; total: number }>();
+  const spellCounts = new Map<string, { wins: number; total: number; spell1Id: number; spell2Id: number }>();
 
   for (const match of proMatches) {
     const key = match.items.join('-');
@@ -472,6 +490,20 @@ function buildPayload({
     runeEntry.total += 1;
     if (match.win) runeEntry.wins += 1;
     runeCounts.set(runeKey, runeEntry);
+
+    if (match.summonerSpell1 && match.summonerSpell2) {
+      const spellPair = [match.summonerSpell1, match.summonerSpell2].sort((a, b) => a - b);
+      const spellKey = `${spellPair[0]}-${spellPair[1]}`;
+      const spellEntry = spellCounts.get(spellKey) || {
+        wins: 0,
+        total: 0,
+        spell1Id: spellPair[0],
+        spell2Id: spellPair[1],
+      };
+      spellEntry.total += 1;
+      if (match.win) spellEntry.wins += 1;
+      spellCounts.set(spellKey, spellEntry);
+    }
   }
 
   const sampleSize = proMatches.length;
@@ -487,8 +519,8 @@ function buildPayload({
     sampleQualified: row.total >= MIN_SAMPLE_SIZE,
     items: row.items.map((itemId) => ({
       itemId,
-      name: itemMap[String(itemId)]?.name || `item ${itemId}`,
-    })),
+      name: itemMap[String(itemId)]?.name || `#${itemId}`,
+    })).filter((item) => item.itemId > 0),
   }));
 
   const mostPopularBuilds = [...buildsRaw].sort((a, b) => b.games - a.games).slice(0, 5);
@@ -518,6 +550,18 @@ function buildPayload({
       winRate: toPercent(rune.wins, rune.total),
     }));
 
+  const topSummonerSpells = [...spellCounts.values()]
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5)
+    .map((spells) => ({
+      spell1Id: spells.spell1Id,
+      spell2Id: spells.spell2Id,
+      games: spells.total,
+      winRate: toPercent(spells.wins, spells.total),
+      popularity: toPercent(spells.total, sampleSize),
+      sampleQualified: spells.total >= MIN_SAMPLE_SIZE,
+    }));
+
   const roleStats = sortByGamesAndWinrate(
     [...roleCounts.entries()].map(([label, stats]) => ({
       label,
@@ -537,6 +581,36 @@ function buildPayload({
 
   const matchups = matchupStats.slice(0, 10);
   const counters = [...matchupStats].filter((row) => row.games >= MIN_SAMPLE_SIZE).sort((a, b) => a.winRate - b.winRate).slice(0, 10);
+  const matchupVariants = matchups
+    .filter((row) => row.games >= MIN_SAMPLE_SIZE)
+    .slice(0, 5)
+    .map((row) => {
+      const versusMatches = proMatches.filter((match) => match.opponentChampion === row.championName);
+      const variants = [...buildCounts.values()]
+        .map((build) => {
+          const buildKey = build.items.join('-');
+          const games = versusMatches.filter((m) => m.items.join('-') === buildKey).length;
+          const wins = versusMatches.filter((m) => m.items.join('-') === buildKey && m.win).length;
+          return {
+            games,
+            winRate: toPercent(wins, games),
+            items: build.items.map((itemId) => ({ itemId, name: itemMap[String(itemId)]?.name || `#${itemId}` })).filter((item) => item.itemId > 0),
+          };
+        })
+        .filter((variant) => variant.games >= MIN_SAMPLE_SIZE)
+        .sort((a, b) => b.games - a.games)
+        .slice(0, 1)[0];
+
+      return variants
+        ? {
+            versusChampion: row.championName,
+            games: variants.games,
+            winRate: variants.winRate,
+            items: variants.items,
+          }
+        : null;
+    })
+    .filter(Boolean) as Array<{ versusChampion: string; games: number; winRate: number; items: Array<{ itemId: number; name: string }> }>;
   const itemStatsBySlot = aggregateItemsBySlot(proMatches, itemMap);
   const skillOrder = deriveSkillOrder(proMatches);
 
@@ -563,6 +637,7 @@ function buildPayload({
     winRate,
     pickRate,
     minSampleSize: MIN_SAMPLE_SIZE,
+    availableRoles: roleStats.map((row) => ({ role: row.label, games: row.games, winRate: row.winRate })),
     overview: {
       primaryBuild: mostPopularBuilds[0]
         ? {
@@ -574,6 +649,7 @@ function buildPayload({
         : null,
       skillOrder,
       topRunes,
+      topSummonerSpells,
     },
     itemStats: {
       bySlot: itemStatsBySlot,
@@ -583,6 +659,7 @@ function buildPayload({
     builds: {
       mostPopular: mostPopularBuilds,
       bestPerformance: bestPerformanceBuilds,
+      matchupVariants,
     },
     secondary: {
       matchups,
@@ -671,6 +748,7 @@ async function buildChampionInsights(champion: string, platform: string, versusC
 
         const participant = match.info.participants.find((p: any) => p.puuid === entryPuuid && normalizeChampionName(p.championName) === normalizeChampionName(resolvedChampion));
         if (!participant) return null;
+        if (Number(match.info.queueId) !== 420) return null;
 
         const roleValue = String(participant.individualPosition || 'UNKNOWN').toUpperCase();
         if (normalizedRole !== 'ALL' && roleValue !== normalizedRole) return null;
@@ -692,13 +770,15 @@ async function buildChampionInsights(champion: string, platform: string, versusC
           win: !!participant.win,
           opponentChampion: opponent?.championName || 'Unknown',
           patch: patchValue,
-          items: [participant.item0, participant.item1, participant.item2, participant.item3, participant.item4, participant.item5].filter(Boolean),
+          items: [participant.item0 || 0, participant.item1 || 0, participant.item2 || 0, participant.item3 || 0, participant.item4 || 0, participant.item5 || 0],
           primaryStyle: participant?.perks?.styles?.[0]?.style || 0,
           subStyle: participant?.perks?.styles?.[1]?.style || 0,
           keystone: participant?.perks?.styles?.[0]?.selections?.[0]?.perk || 0,
           spell1Casts: participant?.spell1Casts || 0,
           spell2Casts: participant?.spell2Casts || 0,
           spell3Casts: participant?.spell3Casts || 0,
+          summonerSpell1: participant?.summoner1Id || 0,
+          summonerSpell2: participant?.summoner2Id || 0,
         } as ProMatch;
       }),
     );
@@ -819,6 +899,7 @@ function toSummary(payload: ChampionInsightsPayload) {
     winRate: payload.winRate,
     pickRate: payload.pickRate,
     minSampleSize: payload.minSampleSize,
+    availableRoles: payload.availableRoles,
     appliedFallback: payload.appliedFallback,
     fallbackReason: payload.fallbackReason,
     overview: payload.overview,

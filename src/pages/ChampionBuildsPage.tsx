@@ -12,7 +12,7 @@ export default function ChampionBuildsPage() {
   const [champions, setChampions] = useState<any[]>([]);
   const [summaryData, setSummaryData] = useState<any>(null);
   const [detailsData, setDetailsData] = useState<any>(null);
-  const [ddragonVersion, setDdragonVersion] = useState('15.7.1');
+  const [ddragonVersion, setDdragonVersion] = useState('');
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [error, setError] = useState('');
@@ -27,7 +27,7 @@ export default function ChampionBuildsPage() {
   const decodedChampion = decodeURIComponent(championName);
 
   useEffect(() => {
-    getLatestDdragonVersion().then(setDdragonVersion);
+    getLatestDdragonVersion().then(setDdragonVersion).catch(() => setDdragonVersion(''));
     fetchChampions()
       .then((response) => setChampions(response?.champions || []))
       .catch(() => setChampions([]));
@@ -116,6 +116,13 @@ export default function ChampionBuildsPage() {
   const data = detailsData || summaryData;
   const maxRoleGames = Math.max(1, ...(data?.charts?.roleDistribution?.values || [0]));
   const maxMatchupGames = Math.max(1, ...((detailsData?.secondary?.matchups || []).map((row: any) => row.games || 0)));
+  const renderItems = (items: Array<{ itemId: number; name: string }> = [], keyPrefix = 'item') => (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {items.filter((item) => item?.itemId > 0).map((item) => (
+        <img key={`${keyPrefix}-${item.itemId}`} src={getItemIconUrl(ddragonVersion, item.itemId)} title={item.name} className="h-8 w-8 rounded-md border border-[var(--border-default)]" loading="lazy" decoding="async" />
+      ))}
+    </div>
+  );
 
   return (
     <main className="page-shell">
@@ -209,6 +216,16 @@ export default function ChampionBuildsPage() {
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"><p className="text-xs uppercase text-[var(--text-muted)]">Sample size</p><p className="mt-2 text-xl font-semibold text-[var(--text-primary)]">{data.sampleSize || 0}</p></div>
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"><p className="text-xs uppercase text-[var(--text-muted)]">Patch / Región</p><p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{data.patch} · {data.region}</p></div>
             </section>
+            <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Roles disponibles</h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(data?.availableRoles || []).length ? (data?.availableRoles || []).map((roleRow: any) => (
+                  <span key={roleRow.role} className="rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-1 text-xs text-[var(--text-secondary)]">
+                    {roleRow.role} · {roleRow.games} partidas · WR {roleRow.winRate}%
+                  </span>
+                )) : <span className="text-xs text-[var(--text-secondary)]">Sin distribución de roles para los filtros actuales.</span>}
+              </div>
+            </section>
 
             <section className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
@@ -220,6 +237,16 @@ export default function ChampionBuildsPage() {
                   ))}
                 </div>
                 <div className="mt-4 rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">Skill order más jugado: {(data?.overview?.skillOrder || []).join(' > ') || '-'}</div>
+                <div className="mt-3">
+                  <p className="text-xs uppercase text-[var(--text-muted)]">Summoner spells más usados</p>
+                  <div className="mt-2 space-y-2">
+                    {(data?.overview?.topSummonerSpells || []).length ? data.overview.topSummonerSpells.map((spells: any, index: number) => (
+                      <div key={`spells-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-2 text-xs text-[var(--text-secondary)]">
+                        Spell IDs {spells.spell1Id} + {spells.spell2Id} · {spells.games} partidas · WR {spells.winRate}%
+                      </div>
+                    )) : <p className="text-xs text-[var(--text-secondary)]">Sin muestra suficiente de summoner spells.</p>}
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
@@ -249,16 +276,22 @@ export default function ChampionBuildsPage() {
                   {(data?.builds?.mostPopular || []).map((build: any, index: number) => (
                     <div key={`popular-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-xs">
                       <p className="text-[var(--text-secondary)]">{build.games} partidas · WR {build.winRate}% · Pick {build.popularity}% {!build.sampleQualified ? '· muestra baja' : ''}</p>
+                      {renderItems(build.items, `popular-${index}`)}
                     </div>
                   ))}
+                  {(data?.builds?.mostPopular || []).length === 0 ? <p className="text-xs text-[var(--text-secondary)]">No hay builds populares para estos filtros.</p> : null}
                 </div>
               </div>
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
                 <h2 className="text-lg font-semibold text-[var(--text-primary)]">Builds con mejor performance</h2>
                 <div className="mt-3 space-y-2">
                   {(data?.builds?.bestPerformance || []).map((build: any, index: number) => (
-                    <div key={`best-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">{build.games} partidas · WR {build.winRate}%</div>
+                    <div key={`best-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
+                      {build.games} partidas · WR {build.winRate}%
+                      {renderItems(build.items, `best-${index}`)}
+                    </div>
                   ))}
+                  {(data?.builds?.bestPerformance || []).length === 0 ? <p className="text-xs text-[var(--text-secondary)]">No hay builds con muestra mínima para evaluar performance.</p> : null}
                 </div>
               </div>
             </section>
@@ -322,7 +355,22 @@ export default function ChampionBuildsPage() {
                     {(detailsData?.secondary?.counters || []).map((row: any) => (
                       <div key={`counter-${row.championName}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">{row.championName} · {row.games} partidas · WR {row.winRate}%</div>
                     ))}
+                    {(detailsData?.secondary?.counters || []).length === 0 ? <p className="text-xs text-[var(--text-secondary)]">Sin counters confiables con la muestra mínima actual.</p> : null}
                   </div>
+                </div>
+              </section>
+            ) : null}
+            {!loadingDetails && detailsData ? (
+              <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Variantes por matchup (con muestra mínima)</h2>
+                <div className="mt-3 space-y-3">
+                  {(detailsData?.builds?.matchupVariants || []).map((variant: any) => (
+                    <div key={`variant-${variant.versusChampion}`} className="rounded-lg bg-[var(--bg-elevated)] p-3">
+                      <p className="text-xs text-[var(--text-secondary)]">VS {variant.versusChampion} · {variant.games} partidas · WR {variant.winRate}%</p>
+                      {renderItems(variant.items, `variant-${variant.versusChampion}`)}
+                    </div>
+                  ))}
+                  {(detailsData?.builds?.matchupVariants || []).length === 0 ? <p className="text-xs text-[var(--text-secondary)]">No hay variantes por matchup que cumplan el mínimo de muestra.</p> : null}
                 </div>
               </section>
             ) : null}

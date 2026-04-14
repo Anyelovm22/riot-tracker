@@ -1,5 +1,9 @@
 import { Request, Response } from 'express';
+import { env } from '../config/env';
 import { getLiveGameSmart } from '../services/riot.service';
+import { getLivePushEntry, saveLivePushEntry } from '../services/live-push-cache.service';
+
+const DEFAULT_LIVE_PUSH_KEY = 'local-player';
 
 export async function getLiveGame(req: Request, res: Response) {
   try {
@@ -43,4 +47,48 @@ export async function getLiveGame(req: Request, res: Response) {
       detail: error?.response?.data || null,
     });
   }
+}
+
+export async function pushLiveSnapshot(req: Request, res: Response) {
+  const providedSecret = String(req.headers['x-live-push-secret'] || '').trim();
+
+  if (env.LIVE_PUSH_SECRET && providedSecret !== env.LIVE_PUSH_SECRET) {
+    return res.status(401).json({ message: 'Unauthorized live push' });
+  }
+
+  const key = String(req.body?.key || DEFAULT_LIVE_PUSH_KEY).trim();
+  const snapshot = req.body?.snapshot;
+  const allGameData = req.body?.allGameData;
+  const source = String(req.body?.source || 'local-agent').trim();
+
+  if (!snapshot && !allGameData) {
+    return res.status(400).json({ message: 'snapshot or allGameData is required' });
+  }
+
+  const saved = saveLivePushEntry({
+    key,
+    snapshot,
+    allGameData,
+    source,
+  });
+
+  return res.json({
+    ok: true,
+    key: saved?.key,
+    updatedAt: saved?.updatedAt,
+  });
+}
+
+export async function getLivePushStatus(req: Request, res: Response) {
+  const key = String(req.query.key || DEFAULT_LIVE_PUSH_KEY).trim();
+  const maxAgeMs = Math.max(5, env.LIVE_PUSH_MAX_AGE_SECONDS) * 1000;
+  const entry = getLivePushEntry(key, maxAgeMs);
+
+  return res.json({
+    ok: true,
+    key,
+    hasFreshData: Boolean(entry),
+    ageMs: entry?.ageMs ?? null,
+    source: entry?.source ?? null,
+  });
 }

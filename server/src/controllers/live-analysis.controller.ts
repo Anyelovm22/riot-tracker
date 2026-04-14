@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { getLiveClientAllGameData } from '../services/live-client.service';
+import { env } from '../config/env';
+import { getLivePushEntry } from '../services/live-push-cache.service';
 
 type Role = 'TOP' | 'JUNGLE' | 'MIDDLE' | 'BOTTOM' | 'UTILITY' | 'NONE';
 type ChampionClass =
@@ -1902,7 +1904,11 @@ export async function getLiveAnalysis(req: Request, res: Response) {
     const targetRiotId = String(req.query.targetRiotId || '').trim();
     const preferredRole = normalizeRole(String(req.query.preferredRole || ''));
 
-    const allGameData = await getLiveClientAllGameData();
+    const livePushKey = String(req.query.liveKey || 'local-player').trim();
+    const maxAgeMs = Math.max(5, env.LIVE_PUSH_MAX_AGE_SECONDS) * 1000;
+    const cachedLive = getLivePushEntry(livePushKey, maxAgeMs);
+
+    const allGameData = cachedLive?.allGameData || (await getLiveClientAllGameData());
     const players: LivePlayer[] = (allGameData?.allPlayers || []).map(mapPlayer);
 
     if (!players.length) {
@@ -2009,6 +2015,7 @@ export async function getLiveAnalysis(req: Request, res: Response) {
 
     return res.json({
       mode,
+      source: cachedLive?.allGameData ? 'push-cache' : 'live-client',
       me: {
         riotId: getPlayerDisplayName(me),
         championName: me.championName,

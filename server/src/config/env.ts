@@ -21,4 +21,6 @@ export const env = {
   LIVE_CLIENT_ENABLED: process.env.LIVE_CLIENT_ENABLED === 'true',
   LIVE_CLIENT_BASE_URL:
     process.env.LIVE_CLIENT_BASE_URL || 'https://127.0.0.1:2999/liveclientdata',
+  LIVE_PUSH_SECRET: process.env.LIVE_PUSH_SECRET || '',
+  LIVE_PUSH_MAX_AGE_SECONDS: Number(process.env.LIVE_PUSH_MAX_AGE_SECONDS || 20),
 };

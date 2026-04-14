@@ -1,10 +1,13 @@
-const BACKEND_URL = "http://localhost:3001/api/live/push";
+const BACKEND_URL = process.env.LIVE_PUSH_URL || "http://localhost:3001/api/live/push";
+const LIVE_PUSH_SECRET = process.env.LIVE_PUSH_SECRET || "";
 const ALL_GAME_DATA_URL = "https://127.0.0.1:2999/liveclientdata/allgamedata";
-const KEY = "local-player";
+const KEY = process.env.LIVE_PUSH_KEY || "local-player";
 
 /**
  * Antes de correrlo en PowerShell:
  * $env:NODE_TLS_REJECT_UNAUTHORIZED="0"
+ * $env:LIVE_PUSH_URL="https://tu-deploy.onrender.com/api/live/push"
+ * $env:LIVE_PUSH_SECRET="tu_secreto_opcional"
  * npm run dev
  */
 
@@ -78,10 +81,7 @@ function toTeamPlayerSnapshot(player: LivePlayer): TeamPlayerSnapshot {
   const deaths = player.scores?.deaths || 0;
   const assists = player.scores?.assists || 0;
   const cs = player.scores?.creepScore || 0;
-  const vision =
-    player.scores?.visionScore ||
-    player.scores?.wardScore ||
-    0;
+  const vision = player.scores?.visionScore || player.scores?.wardScore || 0;
 
   return {
     summonerName: player.summonerName || "Unknown",
@@ -93,10 +93,7 @@ function toTeamPlayerSnapshot(player: LivePlayer): TeamPlayerSnapshot {
     assists,
     cs,
     vision,
-    gold:
-      typeof player.currentGold === "number"
-        ? player.currentGold
-        : null,
+    gold: typeof player.currentGold === "number" ? player.currentGold : null,
     items: (player.items || []).map((i) => String(i.itemID)),
   };
 }
@@ -104,8 +101,7 @@ function toTeamPlayerSnapshot(player: LivePlayer): TeamPlayerSnapshot {
 function findMe(players: LivePlayer[], activePlayerName?: string) {
   if (!activePlayerName) return null;
 
-  const me =
-    players.find((p) => p.summonerName === activePlayerName) || null;
+  const me = players.find((p) => p.summonerName === activePlayerName) || null;
 
   return me;
 }
@@ -113,11 +109,7 @@ function findMe(players: LivePlayer[], activePlayerName?: string) {
 function findLaneEnemy(players: LivePlayer[], me: LivePlayer | null) {
   if (!me?.team || !me?.position) return null;
 
-  return (
-    players.find(
-      (p) => p.team !== me.team && p.position === me.position
-    ) || null
-  );
+  return players.find((p) => p.team !== me.team && p.position === me.position) || null;
 }
 
 async function pollLiveClient() {
@@ -132,26 +124,15 @@ async function pollLiveClient() {
   const me = findMe(players, activePlayer.summonerName);
   const enemy = findLaneEnemy(players, me);
 
-  const allyTeam = me?.team
-    ? players
-        .filter((p) => p.team === me.team)
-        .map(toTeamPlayerSnapshot)
-    : [];
+  const allyTeam = me?.team ? players.filter((p) => p.team === me.team).map(toTeamPlayerSnapshot) : [];
 
-  const enemyTeam = me?.team
-    ? players
-        .filter((p) => p.team !== me.team)
-        .map(toTeamPlayerSnapshot)
-    : [];
+  const enemyTeam = me?.team ? players.filter((p) => p.team !== me.team).map(toTeamPlayerSnapshot) : [];
 
   const myKills = activePlayer.scores?.kills || 0;
   const myDeaths = activePlayer.scores?.deaths || 0;
   const myAssists = activePlayer.scores?.assists || 0;
   const myCs = activePlayer.scores?.creepScore || 0;
-  const myVision =
-    activePlayer.scores?.visionScore ||
-    activePlayer.scores?.wardScore ||
-    0;
+  const myVision = activePlayer.scores?.visionScore || activePlayer.scores?.wardScore || 0;
 
   const snapshot = {
     riotId: activePlayer.riotId || null,
@@ -165,10 +146,7 @@ async function pollLiveClient() {
     kills: myKills,
     deaths: myDeaths,
     assists: myAssists,
-    gold:
-      typeof activePlayer.currentGold === "number"
-        ? activePlayer.currentGold
-        : null,
+    gold: typeof activePlayer.currentGold === "number" ? activePlayer.currentGold : null,
     vision: myVision,
     level: activePlayer.level || 0,
     items: (activePlayer.items || []).map((i) => String(i.itemID)),
@@ -178,24 +156,28 @@ async function pollLiveClient() {
     allies: allyTeam,
     enemies: enemyTeam,
 
-    diffCs:
-      enemy?.scores?.creepScore != null
-        ? myCs - enemy.scores.creepScore
-        : null,
+    diffCs: enemy?.scores?.creepScore != null ? myCs - enemy.scores.creepScore : null,
 
     diffVision:
       (enemy?.scores?.visionScore ?? enemy?.scores?.wardScore) != null
-        ? myVision -
-          (enemy?.scores?.visionScore ?? enemy?.scores?.wardScore ?? 0)
+        ? myVision - (enemy?.scores?.visionScore ?? enemy?.scores?.wardScore ?? 0)
         : null,
   };
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (LIVE_PUSH_SECRET) {
+    headers["x-live-push-secret"] = LIVE_PUSH_SECRET;
+  }
+
   await fetch(BACKEND_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: KEY, snapshot }),
+    headers,
+    body: JSON.stringify({ key: KEY, source: "desktop-agent", snapshot, allGameData: data }),
   });
 }
 
 setInterval(pollLiveClient, 3000);
-console.log("Live agent running...");
+console.log(`Live agent running -> ${BACKEND_URL}`);

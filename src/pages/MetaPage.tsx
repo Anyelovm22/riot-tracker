@@ -611,8 +611,24 @@ export default function MetaPage() {
     const queueType = lpQueue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
     return rankedEntries.find((entry) => entry.queueType === queueType) || null;
   }, [rankedEntries, lpQueue]);
+
+  const sanitizedLpHistory = useMemo(() => {
+    const seen = new Set<string>();
+    return (lpHistory || [])
+      .filter((point) => {
+        const lp = Number(point?.leaguePoints);
+        const rankValue = Number(point?.rankValue);
+        if (!Number.isFinite(lp) || !Number.isFinite(rankValue)) return false;
+        const key = `${point.snapshotAt}:${lp}:${rankValue}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
+  }, [lpHistory]);
+
   const lpChanges = useMemo(() => {
-    return lpHistory.reduce(
+    return sanitizedLpHistory.reduce(
       (acc, point) => {
         if (point.lpChange > 0) acc.gained += point.lpChange;
         if (point.lpChange < 0) acc.lost += Math.abs(point.lpChange);
@@ -620,7 +636,7 @@ export default function MetaPage() {
       },
       { gained: 0, lost: 0 }
     );
-  }, [lpHistory]);
+  }, [sanitizedLpHistory]);
 
   const scoreTone =
     !data ? 'default' : data.summary.winRate >= 55 ? 'good' : data.summary.winRate >= 50 ? 'warn' : 'bad';
@@ -1193,9 +1209,9 @@ export default function MetaPage() {
                 </div>
 
                 <div className="mt-6 h-80">
-                  {lpHistory.length >= 1 ? (
+                  {sanitizedLpHistory.length >= 1 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={lpHistory} margin={{ top: 10, right: 18, left: 6, bottom: 0 }}>
+                      <LineChart data={sanitizedLpHistory} margin={{ top: 10, right: 18, left: 6, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.18)" />
                         <XAxis dataKey="label" tick={{ fill: '#8b8b97', fontSize: 12 }} />
                         <YAxis tick={{ fill: '#8b8b97', fontSize: 12 }} />
@@ -1230,13 +1246,13 @@ export default function MetaPage() {
                 <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <StatCard
                     label="LP actual"
-                    value={lpHistory.length ? lpHistory[lpHistory.length - 1].leaguePoints : '-'}
+                    value={sanitizedLpHistory.length ? sanitizedLpHistory[sanitizedLpHistory.length - 1].leaguePoints : '-'}
                   />
                   <StatCard
                     label="Cambio más reciente"
                     value={
-                      lpHistory.length > 1
-                        ? `${lpHistory[lpHistory.length - 1].lpChange > 0 ? '+' : ''}${lpHistory[lpHistory.length - 1].lpChange} LP`
+                      sanitizedLpHistory.length > 1
+                        ? `${sanitizedLpHistory[sanitizedLpHistory.length - 1].lpChange > 0 ? '+' : ''}${sanitizedLpHistory[sanitizedLpHistory.length - 1].lpChange} LP`
                         : '-'
                     }
                     tone="info"
@@ -1255,7 +1271,7 @@ export default function MetaPage() {
                   />
                   <StatCard
                     label="Snapshots"
-                    value={lpHistory.length}
+                    value={sanitizedLpHistory.length}
                     helper="Puntos históricos guardados"
                   />
                 </div>

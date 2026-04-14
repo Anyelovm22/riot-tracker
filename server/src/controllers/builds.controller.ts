@@ -7,6 +7,7 @@ import {
   getItemData,
   getMatchById,
   getMatchIdsByPuuid,
+  getSummonerBySummonerId,
 } from '../services/riot.service';
 
 type CachedInsight = {
@@ -143,6 +144,7 @@ const MIN_SAMPLE_SIZE = 8;
 const matchIdsCache = new Map<string, { expiresAt: number; value: string[] }>();
 const matchPayloadCache = new Map<string, { expiresAt: number; value: any }>();
 const MATCH_DATA_TTL_MS = 1000 * 60 * 15;
+const summonerPuuidCache = new Map<string, { expiresAt: number; value: string | null }>();
 
 const championInsightsCachePath = path.join(process.cwd(), 'server', 'src', 'data', 'championInsightsCache.json');
 let persistentCacheLoaded = false;
@@ -254,12 +256,26 @@ async function getCachedMatch(matchId: string, platform: string) {
   return value;
 }
 
+
+async function resolveEntryPuuid(entry: any, platform: string) {
+  if (entry?.puuid) return String(entry.puuid);
+  const summonerId = String(entry?.summonerId || '').trim();
+  if (!summonerId) return null;
+
+  const key = `${platform}:${summonerId}`;
+  const cached = summonerPuuidCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const summoner = await getSummonerBySummonerId(summonerId, platform).catch(() => null);
+  const puuid = summoner?.puuid ? String(summoner.puuid) : null;
+  summonerPuuidCache.set(key, { value: puuid, expiresAt: Date.now() + MATCH_DATA_TTL_MS });
+  return puuid;
+}
+
 function getLaneOpponent(participants: any[], player: any) {
   const byRole = participants.find(
     (p) => p.teamId !== player.teamId && p.individualPosition && p.individualPosition === player.individualPosition,
   );
-  return byRole || participants.find((p) => p.teamId !== player.teamId) || null;
-}
 
 function toPercent(part: number, total: number) {
   return Number(((part / Math.max(1, total)) * 100).toFixed(1));
@@ -537,19 +553,20 @@ async function buildChampionInsights(champion: string, platform: string, versusC
 
   const normalizedRank = (rank || 'ALL').toUpperCase();
   const topPlayers = (eliteEntries || [])
-    .filter((entry: any) => entry?.puuid)
     .filter((entry: any) => (normalizedRank === 'ALL' ? true : String(entry.tier || '').toUpperCase() === normalizedRank))
     .sort((a: any, b: any) => (b.leaguePoints || 0) - (a.leaguePoints || 0))
     .slice(0, TOP_PLAYERS_LIMIT);
 
   const matchIdResults = await Promise.allSettled(
     topPlayers.map(async (entry: any) => {
-      const matchIds = await getCachedMatchIds(entry.puuid, platform);
-      return { entry, matchIds };
+      const entryPuuid = await resolveEntryPuuid(entry, platform);
+      if (!entryPuuid) return { entry, entryPuuid: null, matchIds: [] as string[] };
+      const matchIds = await getCachedMatchIds(entryPuuid, platform);
+      return { entry, entryPuuid, matchIds };
     }),
   );
 
-  const pendingMatches: Array<{ entry: any; matchId: string }> = [];
+  const pendingMatches: Array<{ entry: any; entryPuuid: string; matchId: string }> = [];
   const seenMatchIds = new Set<string>();
 
   for (const result of matchIdResults) {
@@ -558,7 +575,8 @@ async function buildChampionInsights(champion: string, platform: string, versusC
     for (const matchId of result.value.matchIds) {
       if (seenMatchIds.has(matchId)) continue;
       seenMatchIds.add(matchId);
-      pendingMatches.push({ entry: result.value.entry, matchId });
+      if (!result.value.entryPuuid) continue;
+      pendingMatches.push({ entry: result.value.entry, entryPuuid: result.value.entryPuuid, matchId });
     }
   }
 
@@ -569,18 +587,18 @@ async function buildChampionInsights(champion: string, platform: string, versusC
   for (let index = 0; index < pendingMatches.length && allRelevantMatches.length < TARGET_PRO_MATCHES * 2; index += MATCH_FETCH_CONCURRENCY) {
     const batch = pendingMatches.slice(index, index + MATCH_FETCH_CONCURRENCY);
     const matches = await Promise.all(
-      batch.map(async ({ entry, matchId }) => {
+      batch.map(async ({ entry, entryPuuid, matchId }) => {
         const match = await getCachedMatch(matchId, platform);
         if (!match?.info?.participants) return null;
 
-        const participant = match.info.participants.find((p: any) => p.puuid === entry.puuid && p.championName === resolvedChampion);
+        const participant = match.info.participants.find((p: any) => p.puuid === entryPuuid && normalizeChampionName(p.championName) === normalizeChampionName(resolvedChampion));
         if (!participant) return null;
 
         const roleValue = String(participant.individualPosition || 'UNKNOWN').toUpperCase();
         if (normalizedRole !== 'ALL' && roleValue !== normalizedRole) return null;
 
         const patchValue = normalizePatch(match.info.gameVersion);
-        if (normalizedPatch !== 'latest' && normalizedPatch !== 'all' && patchValue !== patch) return null;
+        if (normalizedPatch !== 'latest' && normalizedPatch !== 'all' && patchValue !== normalizePatch(patch)) return null;
 
         const opponent = getLaneOpponent(match.info.participants, participant);
 
@@ -616,7 +634,7 @@ async function buildChampionInsights(champion: string, platform: string, versusC
   const patchFilteredMatches = allRelevantMatches.filter((match) => {
     if (normalizedPatch === 'all') return true;
     if (normalizedPatch === 'latest') return match.patch === effectivePatch;
-    return match.patch === patch;
+    return match.patch === normalizePatch(patch);
   });
 
   const eligibleGames = patchFilteredMatches.length;
@@ -624,6 +642,10 @@ async function buildChampionInsights(champion: string, platform: string, versusC
   const filteredMatches = normalizedVersus
     ? patchFilteredMatches.filter((match) => normalizeChampionName(match.opponentChampion) === normalizeChampionName(normalizedVersus))
     : patchFilteredMatches;
+
+  if (!allRelevantMatches.length) {
+    console.warn(`[builds] Empty dataset for champion=${resolvedChampion} platform=${platform} role=${normalizedRole} rank=${normalizedRank}`);
+  }
 
   if (normalizedVersus && filteredMatches.length < MIN_SAMPLE_SIZE) {
     const fallbackPayload = buildPayload({
@@ -633,7 +655,7 @@ async function buildChampionInsights(champion: string, platform: string, versusC
       rank: normalizedRank,
       role: normalizedRole,
       versusChampion: '',
-      eligibleGames,
+      eligibleGames: Math.max(eligibleGames, patchFilteredMatches.length),
       proMatches: patchFilteredMatches.slice(0, TARGET_PRO_MATCHES),
       itemMap: items,
     });
@@ -656,7 +678,7 @@ async function buildChampionInsights(champion: string, platform: string, versusC
     rank: normalizedRank,
     role: normalizedRole,
     versusChampion: normalizedVersus,
-    eligibleGames,
+    eligibleGames: Math.max(eligibleGames, patchFilteredMatches.length),
     proMatches: filteredMatches.slice(0, TARGET_PRO_MATCHES),
     itemMap: items,
   });

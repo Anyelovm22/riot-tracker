@@ -31,7 +31,6 @@ export async function getRankedOverview(req: Request, res: Response) {
 
     const summoner = await getSummonerByPuuid(puuid, platform);
 
-    console.log('RANKED SUMMONER RESPONSE:', JSON.stringify(summoner, null, 2));
 
     if (!summoner || !summoner.id) {
       return res.json({

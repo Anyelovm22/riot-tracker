@@ -136,8 +136,8 @@ const championInsightsCache = new Map<string, CachedInsight>();
 const championInsightsInFlight = new Map<string, Promise<{ status: number; payload: ChampionInsightsPayload | { message: string } }>>();
 const INSIGHTS_CACHE_TTL_MS = 1000 * 60 * 30;
 const MATCH_FETCH_CONCURRENCY = 15;
-const TOP_PLAYERS_LIMIT = 18;
-const MATCH_IDS_PER_PLAYER = 10;
+const TOP_PLAYERS_LIMIT = 40;
+const MATCH_IDS_PER_PLAYER = 12;
 const TARGET_PRO_MATCHES = 60;
 const MIN_SAMPLE_SIZE = 8;
 
@@ -281,6 +281,10 @@ function toPercent(part: number, total: number) {
   return Number(((part / Math.max(1, total)) * 100).toFixed(1));
 }
 
+function toPercent(part: number, total: number) {
+  return Number(((part / Math.max(1, total)) * 100).toFixed(1));
+}
+
 function sortByGamesAndWinrate<T extends { games: number; winRate: number }>(rows: T[]) {
   return [...rows].sort((a, b) => b.games - a.games || b.winRate - a.winRate);
 }
@@ -331,6 +335,46 @@ function aggregateItemsBySlot(matches: ProMatch[], itemMap: Record<string, any>)
     core3: toList(core3),
     situational: toList(situational),
   };
+}
+
+
+async function getElitePlayerPool(platform: string, rank: string) {
+  const normalizedRank = String(rank || 'ALL').toUpperCase();
+  const tierPlan =
+    normalizedRank === 'ALL'
+      ? [
+          { tier: 'CHALLENGER', pages: [1] },
+          { tier: 'GRANDMASTER', pages: [1, 2] },
+          { tier: 'MASTER', pages: [1, 2] },
+        ]
+      : [{ tier: normalizedRank, pages: [1, 2] }];
+
+  const requests: Promise<any[]>[] = [];
+  for (const group of tierPlan) {
+    for (const page of group.pages) {
+      requests.push(getEliteLeagueEntries(platform, 'RANKED_SOLO_5x5', group.tier, 'I', page).catch(() => []));
+    }
+  }
+
+  const settled = await Promise.all(requests);
+  const bySummoner = new Map<string, any>();
+
+  for (const list of settled) {
+    for (const entry of list || []) {
+      const summonerId = String(entry?.summonerId || '').trim();
+      const key = summonerId || String(entry?.summonerName || '').trim().toLowerCase();
+      if (!key) continue;
+
+      const prev = bySummoner.get(key);
+      if (!prev || (entry?.leaguePoints || 0) > (prev?.leaguePoints || 0)) {
+        bySummoner.set(key, entry);
+      }
+    }
+  }
+
+  return [...bySummoner.values()]
+    .sort((a, b) => (b?.leaguePoints || 0) - (a?.leaguePoints || 0))
+    .slice(0, TOP_PLAYERS_LIMIT);
 }
 
 function buildPayload({
@@ -552,10 +596,13 @@ async function buildChampionInsights(champion: string, platform: string, versusC
   }
 
   const normalizedRank = (rank || 'ALL').toUpperCase();
-  const topPlayers = (eliteEntries || [])
-    .filter((entry: any) => (normalizedRank === 'ALL' ? true : String(entry.tier || '').toUpperCase() === normalizedRank))
-    .sort((a: any, b: any) => (b.leaguePoints || 0) - (a.leaguePoints || 0))
-    .slice(0, TOP_PLAYERS_LIMIT);
+  const elitePool = await getElitePlayerPool(platform, normalizedRank);
+  const topPlayers = elitePool.length
+    ? elitePool
+    : (eliteEntries || [])
+        .filter((entry: any) => (normalizedRank === 'ALL' ? true : String(entry.tier || '').toUpperCase() === normalizedRank))
+        .sort((a: any, b: any) => (b.leaguePoints || 0) - (a.leaguePoints || 0))
+        .slice(0, TOP_PLAYERS_LIMIT);
 
   const matchIdResults = await Promise.allSettled(
     topPlayers.map(async (entry: any) => {
@@ -637,11 +684,17 @@ async function buildChampionInsights(champion: string, platform: string, versusC
     return match.patch === normalizePatch(patch);
   });
 
-  const eligibleGames = patchFilteredMatches.length;
   const normalizedVersus = String(versusChampion || '').trim();
+  let effectiveMatches = patchFilteredMatches;
+  if (normalizedPatch === 'latest' && effectiveMatches.length < MIN_SAMPLE_SIZE && allRelevantMatches.length >= MIN_SAMPLE_SIZE) {
+    effectiveMatches = allRelevantMatches;
+  }
+
+  const eligibleGames = effectiveMatches.length;
+
   const filteredMatches = normalizedVersus
-    ? patchFilteredMatches.filter((match) => normalizeChampionName(match.opponentChampion) === normalizeChampionName(normalizedVersus))
-    : patchFilteredMatches;
+    ? effectiveMatches.filter((match) => normalizeChampionName(match.opponentChampion) === normalizeChampionName(normalizedVersus))
+    : effectiveMatches;
 
   if (!allRelevantMatches.length) {
     console.warn(`[builds] Empty dataset for champion=${resolvedChampion} platform=${platform} role=${normalizedRole} rank=${normalizedRank}`);
@@ -655,8 +708,8 @@ async function buildChampionInsights(champion: string, platform: string, versusC
       rank: normalizedRank,
       role: normalizedRole,
       versusChampion: '',
-      eligibleGames: Math.max(eligibleGames, patchFilteredMatches.length),
-      proMatches: patchFilteredMatches.slice(0, TARGET_PRO_MATCHES),
+      eligibleGames: Math.max(eligibleGames, effectiveMatches.length),
+      proMatches: effectiveMatches.slice(0, TARGET_PRO_MATCHES),
       itemMap: items,
     });
 
@@ -678,7 +731,7 @@ async function buildChampionInsights(champion: string, platform: string, versusC
     rank: normalizedRank,
     role: normalizedRole,
     versusChampion: normalizedVersus,
-    eligibleGames: Math.max(eligibleGames, patchFilteredMatches.length),
+    eligibleGames: Math.max(eligibleGames, effectiveMatches.length),
     proMatches: filteredMatches.slice(0, TARGET_PRO_MATCHES),
     itemMap: items,
   });

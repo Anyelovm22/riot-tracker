@@ -216,24 +216,33 @@ async function getRankedMatchIds(puuid: string, platform: string, hardLimit = 20
 
 async function fetchMatchesSafely(matchIds: string[], platform: string) {
   const results: any[] = [];
+  const concurrency = 4;
 
-  for (const id of matchIds) {
-    try {
-      const match = await getMatchById(id, platform);
-      results.push(match);
-      await sleep(2200);
-    } catch (error: any) {
-      const status = error?.response?.status;
-      const detail = error?.response?.data || error.message || error;
+  for (let index = 0; index < matchIds.length; index += concurrency) {
+    const chunk = matchIds.slice(index, index + concurrency);
+    const chunkResults = await Promise.allSettled(
+      chunk.map((id) => getMatchById(id, platform))
+    );
 
+    for (let idx = 0; idx < chunkResults.length; idx += 1) {
+      const result = chunkResults[idx];
+      const id = chunk[idx];
+
+      if (result.status === 'fulfilled') {
+        results.push(result.value);
+        continue;
+      }
+
+      const status = (result.reason as any)?.response?.status;
+      const detail = (result.reason as any)?.response?.data || (result.reason as any)?.message || result.reason;
       console.error(`MATCH DETAIL ERROR ${id}:`, detail);
 
       if (status === 429) {
-        await sleep(10000);
-      } else {
-        await sleep(3500);
+        await sleep(1500);
       }
     }
+
+    await sleep(250);
   }
 
   return results;

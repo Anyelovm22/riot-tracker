@@ -276,9 +276,12 @@ function getLaneOpponent(participants: any[], player: any) {
   const byRole = participants.find(
     (p) => p.teamId !== player.teamId && p.individualPosition && p.individualPosition === player.individualPosition,
   );
+  if (byRole) return byRole;
 
-function toPercent(part: number, total: number) {
-  return Number(((part / Math.max(1, total)) * 100).toFixed(1));
+  const byLane = participants.find((p) => p.teamId !== player.teamId && p.teamPosition && p.teamPosition === player.teamPosition);
+  if (byLane) return byLane;
+
+  return participants.find((p) => p.teamId !== player.teamId) || null;
 }
 
 function toPercent(part: number, total: number) {

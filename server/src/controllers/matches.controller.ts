@@ -19,6 +19,8 @@ const queueLabels: Record<number, string> = {
 };
 
 const activeHistoryRequests = new Set<string>();
+const aiRetrospectiveCache = new Map<string, { value: string; expiresAt: number }>();
+const AI_RETROSPECTIVE_TTL_MS = 1000 * 60 * 15;
 
 function itemIcon(version: string, itemId?: number) {
   if (!itemId || itemId === 0) return null;
@@ -185,6 +187,16 @@ function resolveLaneEnemy(player: any, participants: any[]) {
   );
 
   if (sameRoleEnemy) return sameRoleEnemy;
+
+  const sameTeamPositionEnemy = participants.find(
+    (p) =>
+      p.puuid !== player.puuid &&
+      p.teamId !== player.teamId &&
+      p.teamPosition &&
+      p.teamPosition === player.teamPosition
+  );
+
+  if (sameTeamPositionEnemy) return sameTeamPositionEnemy;
 
   return participants.find((p) => p.puuid !== player.puuid && p.teamId !== player.teamId) || null;
 }
@@ -361,10 +373,12 @@ export async function getMatchDetail(req: Request, res: Response) {
   }
 
   try {
-    const match = await getMatchById(matchId, platform);
-    const timeline = await getMatchTimelineById(matchId, platform).catch(() => null);
-    const itemData = await getItemData().catch(() => null);
-    const version = await getLatestDdragonVersion();
+    const [match, timeline, itemData, version] = await Promise.all([
+      getMatchById(matchId, platform),
+      getMatchTimelineById(matchId, platform).catch(() => null),
+      getItemData().catch(() => null),
+      getLatestDdragonVersion(),
+    ]);
     const player = match?.info?.participants?.find((p: any) => p.puuid === puuid) || null;
 
     const participants = (match?.info?.participants || []).map((p: any) => ({
@@ -420,9 +434,12 @@ export async function getMatchDetail(req: Request, res: Response) {
     const playerFeedback = player ? buildPlayerFeedback(player, teamKills, match.info.gameDuration) : [];
     const itemFeedback = player ? buildItemSwapFeedback({ ...player, gameDuration: match.info.gameDuration }, itemNames) : [];
     const laneEnemy = player ? resolveLaneEnemy(player, match?.info?.participants || []) : null;
-    const aiRetrospective =
+    const aiCacheKey = `${platform}:${matchId}:${puuid}`;
+    const aiCached = aiRetrospectiveCache.get(aiCacheKey);
+    const aiResultLabel: 'Victoria' | 'Derrota' = player?.win ? 'Victoria' : 'Derrota';
+    const aiRetrospectiveInput =
       player && playerTeam.length
-        ? await generateLocalAiRetrospective({
+        ? {
             championName: player.championName || 'Unknown',
             role: player.individualPosition || 'UNKNOWN',
             kda: `${player.kills}/${player.deaths}/${player.assists}`,
@@ -435,7 +452,7 @@ export async function getMatchDetail(req: Request, res: Response) {
             damageTaken: player.totalDamageTaken || 0,
             gold: player.goldEarned || 0,
             queueLabel: queueLabels[match.info.queueId] || `Queue ${match.info.queueId}`,
-            result: player.win ? 'Victoria' : 'Derrota',
+            result: aiResultLabel,
             itemNames: [player.item0, player.item1, player.item2, player.item3, player.item4, player.item5]
               .map((itemId: number) => itemNames[itemId])
               .filter(Boolean),
@@ -450,20 +467,24 @@ export async function getMatchDetail(req: Request, res: Response) {
                   ),
                   damage: laneEnemy.totalDamageDealtToChampions || 0,
                   gold: laneEnemy.goldEarned || 0,
-                  itemNames: [
-                    laneEnemy.item0,
-                    laneEnemy.item1,
-                    laneEnemy.item2,
-                    laneEnemy.item3,
-                    laneEnemy.item4,
-                    laneEnemy.item5,
-                  ]
+                  itemNames: [laneEnemy.item0, laneEnemy.item1, laneEnemy.item2, laneEnemy.item3, laneEnemy.item4, laneEnemy.item5]
                     .map((itemId: number) => itemNames[itemId])
                     .filter(Boolean),
                 }
               : null,
-          })
+          }
         : null;
+
+    const aiRetrospective =
+      aiRetrospectiveInput == null
+        ? null
+        : aiCached && aiCached.expiresAt > Date.now()
+          ? aiCached.value
+          : await generateLocalAiRetrospective(aiRetrospectiveInput);
+
+    if (aiRetrospective && aiRetrospectiveInput) {
+      aiRetrospectiveCache.set(aiCacheKey, { value: aiRetrospective, expiresAt: Date.now() + AI_RETROSPECTIVE_TTL_MS });
+    }
 
     return res.json({
       matchId: match.metadata.matchId,

@@ -780,10 +780,21 @@ export async function getBuildsByChampion(req: Request, res: Response) {
     const matches = await Promise.all(matchIds.map((id: string) => getMatchById(id, platform)));
     const { items } = await getItemData();
 
-    const relevantPlayers = matches
-      .map((match: any) => match.info.participants.find((p: any) => p.puuid === puuid))
-      .filter(Boolean)
-      .filter((p: any) => (champion ? p.championName === champion : true));
+    type MatchParticipant = {
+      puuid: string;
+      championName?: string;
+      item0?: number;
+      item1?: number;
+      item2?: number;
+      item3?: number;
+      item4?: number;
+      item5?: number;
+    };
+
+    const relevantPlayers: MatchParticipant[] = matches
+      .map((match: any) => match?.info?.participants?.find((p: MatchParticipant) => p.puuid === puuid) || null)
+      .filter((p): p is MatchParticipant => p !== null)
+      .filter((p) => (champion ? p.championName === champion : true));
 
     const itemCounts = new Map<number, number>();
 

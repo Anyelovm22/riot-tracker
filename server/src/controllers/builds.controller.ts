@@ -100,6 +100,15 @@ function getLaneOpponent(participants: any[], player: any) {
   return byRole || participants.find((p) => p.teamId !== player.teamId) || null;
 }
 
+
+function normalizeChampionName(name: string) {
+  return String(name || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toLowerCase();
+}
+
 async function buildChampionInsights(champion: string, platform: string, versusChampion: string) {
   const [{ items }, championsData, eliteEntries] = await Promise.all([
     getItemData(),
@@ -107,15 +116,22 @@ async function buildChampionInsights(champion: string, platform: string, versusC
     getEliteLeagueEntries(platform),
   ]);
 
-  const championSet = new Set((championsData?.champions || []).map((championData: any) => championData?.name));
-  if (!championSet.has(champion)) {
+  const championByNormalizedName = new Map<string, string>(
+    (championsData?.champions || []).map((championData: any) => [
+      normalizeChampionName(championData?.name),
+      String(championData?.name || ''),
+    ])
+  );
+
+  const resolvedChampion = championByNormalizedName.get(normalizeChampionName(champion));
+  if (!resolvedChampion) {
     return { status: 404, payload: { message: `Champion ${champion} not found` } };
   }
 
   const topPlayers = (eliteEntries || [])
     .filter((entry: any) => entry?.puuid)
     .sort((a: any, b: any) => (b.leaguePoints || 0) - (a.leaguePoints || 0))
-    .slice(0, 10);
+    .slice(0, 25);
 
   const matchIdResults = await Promise.allSettled(
     topPlayers.map(async (entry: any) => {
@@ -128,9 +144,14 @@ async function buildChampionInsights(champion: string, platform: string, versusC
   );
 
   const pendingMatches: Array<{ entry: any; matchId: string }> = [];
+  const seenMatchIds = new Set<string>();
+
   for (const result of matchIdResults) {
     if (result.status !== 'fulfilled') continue;
+
     for (const matchId of result.value.matchIds) {
+      if (seenMatchIds.has(matchId)) continue;
+      seenMatchIds.add(matchId);
       pendingMatches.push({ entry: result.value.entry, matchId });
     }
   }
@@ -145,7 +166,7 @@ async function buildChampionInsights(champion: string, platform: string, versusC
         if (!match?.info?.participants) return null;
 
         const participant = match.info.participants.find(
-          (p: any) => p.puuid === entry.puuid && p.championName === champion
+          (p: any) => p.puuid === entry.puuid && p.championName === resolvedChampion
         );
         if (!participant) return null;
 
@@ -182,6 +203,24 @@ async function buildChampionInsights(champion: string, platform: string, versusC
       if (!processedMatch) continue;
       proMatches.push(processedMatch);
       if (proMatches.length >= 35) break;
+    }
+  }
+
+  const hasVersusFilter = Boolean(versusChampion);
+
+  if (hasVersusFilter && proMatches.length < 8) {
+    const fallback = await buildChampionInsights(resolvedChampion, platform, '');
+    if (fallback.status === 200) {
+      return {
+        status: 200,
+        payload: {
+          ...fallback.payload,
+          versusChampion,
+          requestedVersusChampion: versusChampion,
+          appliedFallback: true,
+          fallbackReason: 'No había muestra suficiente para ese matchup exacto. Se mostró la build general del campeón.',
+        },
+      };
     }
   }
 
@@ -293,7 +332,7 @@ async function buildChampionInsights(champion: string, platform: string, versusC
   return {
     status: 200,
     payload: {
-      champion,
+      champion: resolvedChampion,
       versusChampion: versusChampion || null,
       sampleSize: proMatches.length,
       proMatches: proMatches.sort((a, b) => b.gameCreation - a.gameCreation).slice(0, 20),

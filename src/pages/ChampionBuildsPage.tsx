@@ -92,6 +92,12 @@ export default function ChampionBuildsPage() {
 
         {!loading && !error && data ? (
           <>
+        {data?.appliedFallback ? (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            {data.fallbackReason}
+          </div>
+        ) : null}
+
             <section className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
                 <p className="text-xs uppercase text-[var(--text-muted)]">Campeón</p>

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getLiveClientAllGameData } from '../services/live-client.service';
+import { getLiveSnapshot, setLiveSnapshot } from '../data/liveSnapshotStore';
 
 type Role = 'TOP' | 'JUNGLE' | 'MIDDLE' | 'BOTTOM' | 'UTILITY' | 'NONE';
 type ChampionClass =
@@ -790,13 +791,11 @@ function detectEnemySignals(player: LivePlayer): EnemySignal[] {
   return signals;
 }
 
-const cache = new Map<string, any>();
-
 export async function pushLiveSnapshot(req: Request, res: Response) {
   const { key, snapshot } = req.body;
   if (!key || !snapshot) return res.status(400).json({ message: 'Faltan datos' });
-  
-  cache.set(key, { snapshot, updatedAt: Date.now() });
+
+  setLiveSnapshot(String(key), snapshot);
   return res.json({ ok: true });
 }
 
@@ -1912,7 +1911,9 @@ export async function getLiveAnalysis(req: Request, res: Response) {
     const targetRiotId = String(req.query.targetRiotId || '').trim();
     const preferredRole = normalizeRole(String(req.query.preferredRole || ''));
 
-    const allGameData = await getLiveClientAllGameData();
+    const snapshotKey = String(req.query.snapshotKey || 'local-player').trim();
+    const pushedSnapshot = getLiveSnapshot(snapshotKey);
+    const allGameData = pushedSnapshot?.snapshot || (await getLiveClientAllGameData());
     const players: LivePlayer[] = (allGameData?.allPlayers || []).map(mapPlayer);
 
     if (!players.length) {

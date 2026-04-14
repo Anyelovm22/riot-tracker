@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, cachedGet } from './api';
 
 export type QueueMode = 'all' | 'solo' | 'flex';
 export type LpQueueMode = 'solo' | 'flex';
@@ -235,15 +235,13 @@ export async function syncAnalyticsMatches(payload: SyncAnalyticsPayload) {
 }
 
 export async function fetchAnalyticsSummary(params: FetchAnalyticsSummaryParams) {
-  const { data } = await api.get<AnalyticsSummaryResponse>('/analytics/summary', {
-    params,
+  return cachedGet<AnalyticsSummaryResponse>('/analytics/summary', params, {
+    ttlMs: 1000 * 60 * 2,
   });
-  return data;
 }
 
 export async function fetchLpHistory(params: FetchLpHistoryParams) {
-  const { data } = await api.get<LpHistoryResponse>('/analytics/lp-history', {
-    params,
+  return cachedGet<LpHistoryResponse>('/analytics/lp-history', params, {
+    ttlMs: 1000 * 60 * 3,
   });
-  return data;
 }

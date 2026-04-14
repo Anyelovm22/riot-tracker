@@ -56,7 +56,6 @@ export default function ChampionBuildsPage() {
       if (requestIdRef.current === nextRequestId) {
         setLoading(false);
       }
-      setLoading(false);
     }
   }
 

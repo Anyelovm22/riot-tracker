@@ -1,4 +1,4 @@
-import { api } from './api';
+import { cachedGet } from './api';
 
 export async function fetchMatchHistory(params: {
   puuid: string;
@@ -7,8 +7,7 @@ export async function fetchMatchHistory(params: {
   all?: boolean;
   queueId?: number;
 }) {
-  const { data } = await api.get('/matches/history', { params });
-  return data;
+  return cachedGet('/matches/history', params, { ttlMs: 1000 * 60 * 2 });
 }
 
 export async function fetchMatchDetail(params: {
@@ -17,8 +16,7 @@ export async function fetchMatchDetail(params: {
   platform: string;
 }) {
   const { matchId, ...query } = params;
-  const { data } = await api.get(`/matches/${encodeURIComponent(matchId)}/detail`, {
-    params: query,
+  return cachedGet(`/matches/${encodeURIComponent(matchId)}/detail`, query, {
+    ttlMs: 1000 * 60 * 5,
   });
-  return data;
 }

@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, cachedGet } from './api';
 
 type BuildInsightsParams = {
   champion: string;
@@ -36,8 +36,7 @@ export async function fetchBuildsByChampion(params: {
   platform: string;
   champion?: string;
 }) {
-  const { data } = await api.get('/builds/by-champion', { params });
-  return data;
+  return cachedGet('/builds/by-champion', params, { ttlMs: 1000 * 60 * 2 });
 }
 
 export async function fetchChampionBuildInsights(params: BuildInsightsParams) {
@@ -50,14 +49,19 @@ export async function fetchChampionBuildInsights(params: BuildInsightsParams) {
     return existingPromise;
   }
 
-  const request = api
-    .get('/builds/champion-insights', { params })
-    .then(({ data }) => {
+  const request = cachedGet('/builds/champion-insights', params, {
+    ttlMs: INSIGHTS_TTL_MS,
+  })
+    .then(async (data) => {
+      const hasBuildPayload = Array.isArray(data?.topBuilds) || Array.isArray(data?.recommendedItems);
+      const nextData = hasBuildPayload
+        ? data
+        : (await api.get('/builds/champion-insights', { params })).data;
       insightsMemoryCache.set(cacheKey, {
-        data,
+        data: nextData,
         expiresAt: Date.now() + INSIGHTS_TTL_MS,
       });
-      return data;
+      return nextData;
     })
     .finally(() => {
       inFlightInsights.delete(cacheKey);

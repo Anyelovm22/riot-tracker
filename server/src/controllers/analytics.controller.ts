@@ -51,6 +51,9 @@ const queueMap = {
   flex: 440,
 };
 
+const RANKED_QUEUE_IDS = [queueMap.solo, queueMap.flex];
+const MIN_VALID_GAME_DURATION_SECONDS = 300;
+
 const activeSyncRequests = new Set<string>();
 
 function sleep(ms: number) {
@@ -954,17 +957,27 @@ async function saveRankSnapshots(puuid: string, platform: string) {
 
     if (!entries?.length) return;
 
+    const queueTypes = entries.map((entry) => entry.queueType).filter(Boolean);
+    const latestSnapshots = await prisma.playerRankSnapshot.findMany({
+      where: {
+        puuid,
+        platform,
+        queueType: { in: queueTypes },
+      },
+      orderBy: {
+        snapshotAt: 'desc',
+      },
+    });
+
+    const latestByQueue = new Map<string, any>();
+    for (const snapshot of latestSnapshots) {
+      if (!latestByQueue.has(snapshot.queueType)) {
+        latestByQueue.set(snapshot.queueType, snapshot);
+      }
+    }
+
     for (const entry of entries) {
-      const lastSnapshot = await prisma.playerRankSnapshot.findFirst({
-        where: {
-          puuid,
-          platform,
-          queueType: entry.queueType,
-        },
-        orderBy: {
-          snapshotAt: 'desc',
-        },
-      });
+      const lastSnapshot = latestByQueue.get(entry.queueType) || null;
 
       const isSameAsLast =
         lastSnapshot &&
@@ -1061,7 +1074,7 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
 
     while (keepGoing) {
       const batchSize = 100;
-      const ids = await getMatchIdsByPuuid(puuid, platform, batchSize, start);
+      const ids = await getMatchIdsByPuuid(puuid, platform, batchSize, start, undefined, undefined, undefined, 'ranked');
 
       totalPages += 1;
 
@@ -1103,19 +1116,23 @@ export async function syncAnalyticsMatches(req: Request, res: Response) {
           const player = match.info.participants.find((p: any) => p.puuid === puuid);
 
           if (!player) continue;
+          const queueId = Number(match?.info?.queueId || 0);
+          const gameDuration = Number(match?.info?.gameDuration || 0);
+          if (!RANKED_QUEUE_IDS.includes(queueId)) continue;
+          if (gameDuration < MIN_VALID_GAME_DURATION_SECONDS) continue;
 
           rowsToInsert.push({
             puuid,
             platform,
             matchId: id,
-            queueId: match.info.queueId,
+            queueId,
             gameCreation: BigInt(match.info.gameCreation),
-            gameDuration: match.info.gameDuration,
+            gameDuration,
             championName: player.championName,
             kills: player.kills,
             deaths: player.deaths,
             assists: player.assists,
-            win: player.win,
+            win: !!player.win,
             totalMinionsKilled: player.totalMinionsKilled || 0,
             neutralMinionsKilled: player.neutralMinionsKilled || 0,
             totalDamageDealtToChampions: player.totalDamageDealtToChampions || 0,
@@ -1218,7 +1235,10 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
     };
 
     if (queue === 'solo') where.queueId = queueMap.solo;
-    if (queue === 'flex') where.queueId = queueMap.flex;
+    else if (queue === 'flex') where.queueId = queueMap.flex;
+    else where.queueId = { in: RANKED_QUEUE_IDS };
+
+    where.gameDuration = { gte: MIN_VALID_GAME_DURATION_SECONDS };
 
     if (startAt || endAt) {
       where.gameCreation = {};
@@ -1242,11 +1262,18 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
       }
     }
 
-    const rows = await prisma.playerMatchCache.findMany({
+    const rowsRaw = await prisma.playerMatchCache.findMany({
       where,
       orderBy: {
         gameCreation: 'asc',
       },
+    });
+
+    const seenMatchIds = new Set<string>();
+    const rows = rowsRaw.filter((row) => {
+      if (seenMatchIds.has(row.matchId)) return false;
+      seenMatchIds.add(row.matchId);
+      return true;
     });
 
     await saveRankSnapshots(puuid, platform);

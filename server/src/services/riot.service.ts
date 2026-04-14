@@ -165,6 +165,17 @@ export async function getLeagueEntriesBySummonerId(
   );
 }
 
+
+export async function getSummonerBySummonerId(summonerId: string, platform: string) {
+  const client = riotClient(getPlatformBase(platform));
+  return riotGetWithRetry<any>(
+    client,
+    `/lol/summoner/v4/summoners/${encodeURIComponent(summonerId)}`,
+    undefined,
+    4
+  );
+}
+
 export async function getLeagueEntriesByPuuid(puuid: string, platform: string) {
   const client = riotClient(getPlatformBase(platform));
   return riotGetWithRetry<any[]>(
@@ -291,7 +302,9 @@ export async function getMatchIdsByPuuid(
   count = 20,
   start = 0,
   startTime?: number,
-  endTime?: number
+  endTime?: number,
+  queue?: number,
+  type?: 'ranked' | 'normal' | 'tourney' | 'tutorial'
 ) {
   const client = riotClient(getRegionalBase(platform));
 
@@ -299,6 +312,8 @@ export async function getMatchIdsByPuuid(
 
   if (startTime) params.startTime = startTime;
   if (endTime) params.endTime = endTime;
+  if (queue) params.queue = queue;
+  if (type) (params as any).type = type;
 
   return riotGetWithRetry<string[]>(
     client,

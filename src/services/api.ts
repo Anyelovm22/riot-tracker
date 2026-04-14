@@ -47,6 +47,7 @@ type CachedGetOptions = {
 };
 
 const memoryCache = new Map<string, CacheEnvelope<unknown>>();
+const inFlightRequests = new Map<string, Promise<any>>();
 const DEFAULT_TTL_MS = 1000 * 30;
 
 function buildCacheKey(url: string, params?: Record<string, unknown>) {
@@ -60,6 +61,7 @@ function buildCacheKey(url: string, params?: Record<string, unknown>) {
 }
 
 function readPersistentCache<T>(cacheKey: string): CacheEnvelope<T> | null {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(`riot-http-cache:${cacheKey}`);
     if (!raw) return null;
@@ -77,6 +79,7 @@ function readPersistentCache<T>(cacheKey: string): CacheEnvelope<T> | null {
 }
 
 function writePersistentCache<T>(cacheKey: string, payload: CacheEnvelope<T>) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(`riot-http-cache:${cacheKey}`, JSON.stringify(payload));
   } catch {
@@ -103,14 +106,28 @@ export async function cachedGet<T = any>(
     return fromStorage.data;
   }
 
-  const { data } = await api.get<T>(url, { params });
-  const payload: CacheEnvelope<T> = {
-    savedAt: Date.now(),
-    expiresAt: Date.now() + ttlMs,
-    data,
-  };
+  const existingRequest = inFlightRequests.get(cacheKey);
+  if (existingRequest) {
+    return existingRequest as Promise<T>;
+  }
 
-  memoryCache.set(cacheKey, payload);
-  writePersistentCache(cacheKey, payload);
-  return data;
+  const request = api
+    .get<T>(url, { params })
+    .then(({ data }) => {
+      const payload: CacheEnvelope<T> = {
+        savedAt: Date.now(),
+        expiresAt: Date.now() + ttlMs,
+        data,
+      };
+
+      memoryCache.set(cacheKey, payload);
+      writePersistentCache(cacheKey, payload);
+      return data;
+    })
+    .finally(() => {
+      inFlightRequests.delete(cacheKey);
+    });
+
+  inFlightRequests.set(cacheKey, request);
+  return request;
 }

@@ -240,7 +240,7 @@ export default function ChampionBuildsPage() {
                 <div className="mt-3">
                   <p className="text-xs uppercase text-[var(--text-muted)]">Summoner spells más usados</p>
                   <div className="mt-2 space-y-2">
-                    {(data?.overview?.topSummonerSpells || []).length ? data.overview.topSummonerSpells.map((spells: any, index: number) => (
+                    {(data?.overview?.summonerSpells || []).length ? data.overview.summonerSpells.map((spells: any, index: number) => (
                       <div key={`spells-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-2 text-xs text-[var(--text-secondary)]">
                         Spell IDs {spells.spell1Id} + {spells.spell2Id} · {spells.games} partidas · WR {spells.winRate}%
                       </div>

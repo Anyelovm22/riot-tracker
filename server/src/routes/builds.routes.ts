@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { getChampionBuildInsights } from '../controllers/builds.controller';
+import { getChampionBuildDetails, getChampionBuildSummary } from '../controllers/builds.controller';
 
 const router = Router();
 
-router.get('/champion-insights', getChampionBuildInsights);
+router.get('/champion-summary', getChampionBuildSummary);
+router.get('/champion-details', getChampionBuildDetails);
 
 export default router;

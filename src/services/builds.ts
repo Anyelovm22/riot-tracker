@@ -18,7 +18,7 @@ const insightsMemoryCache = new Map<string, CacheEntry>();
 const inFlightInsights = new Map<string, Promise<any>>();
 const INSIGHTS_TTL_MS = 1000 * 60 * 30;
 
-function getInsightsCacheKey(params: BuildInsightsParams, view: 'summary' | 'full') {
+function getInsightsCacheKey(params: BuildInsightsParams, view: 'summary' | 'details') {
   return [
     params.platform,
     params.champion.toLowerCase(),
@@ -42,17 +42,17 @@ function getCachedInsights(cacheKey: string) {
   return cached.data;
 }
 
-async function fetchChampionBuildInsightsByView(params: BuildInsightsParams, view: 'summary' | 'full') {
+async function fetchChampionBuildInsightsByView(params: BuildInsightsParams, view: 'summary' | 'details') {
   const cacheKey = getInsightsCacheKey(params, view);
   const cached = getCachedInsights(cacheKey);
   if (cached) return cached;
 
   const existingPromise = inFlightInsights.get(cacheKey);
-  if (existingPromise) {
-    return existingPromise;
-  }
+  if (existingPromise) return existingPromise;
 
-  const request = cachedGet('/builds/champion-insights', { ...params, view }, { ttlMs: INSIGHTS_TTL_MS })
+  const endpoint = view === 'summary' ? '/builds/champion-summary' : '/builds/champion-details';
+
+  const request = cachedGet(endpoint, params, { ttlMs: INSIGHTS_TTL_MS })
     .then((data) => {
       insightsMemoryCache.set(cacheKey, {
         data,
@@ -73,5 +73,5 @@ export function fetchChampionBuildSummary(params: BuildInsightsParams) {
 }
 
 export function fetchChampionBuildInsights(params: BuildInsightsParams) {
-  return fetchChampionBuildInsightsByView(params, 'full');
+  return fetchChampionBuildInsightsByView(params, 'details');
 }

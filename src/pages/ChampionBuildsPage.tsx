@@ -3,14 +3,12 @@ import { useParams } from 'react-router-dom';
 import BackButton from '../components/common/BackButton';
 import { fetchChampions } from '../services/champions';
 import { fetchChampionBuildInsights, fetchChampionBuildSummary } from '../services/builds';
-import { readStoredProfile } from '../utils/profileStorage';
 import { getItemIconUrl, getLatestDdragonVersion } from '../utils/ddragonVersion';
 
 const BuildWinrateChart = lazy(() => import('../components/builds/BuildWinrateChart'));
 
 export default function ChampionBuildsPage() {
   const { championName = '' } = useParams();
-  const profile = readStoredProfile();
   const [champions, setChampions] = useState<any[]>([]);
   const [summaryData, setSummaryData] = useState<any>(null);
   const [detailsData, setDetailsData] = useState<any>(null);
@@ -19,6 +17,10 @@ export default function ChampionBuildsPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [error, setError] = useState('');
   const [versusInput, setVersusInput] = useState('');
+  const [selectedRole, setSelectedRole] = useState('MIDDLE');
+  const [selectedPlatform, setSelectedPlatform] = useState('la1');
+  const [selectedRank, setSelectedRank] = useState('ALL');
+  const [selectedPatch, setSelectedPatch] = useState('latest');
   const requestIdRef = useRef(0);
   const initialLoadKeyRef = useRef('');
 
@@ -65,11 +67,11 @@ export default function ChampionBuildsPage() {
     const selectedVersus = (nextVersus || '').trim();
     const sharedParams = {
       champion: decodedChampion,
-      platform: profile?.resolvedPlatform || 'la1',
+      platform: selectedPlatform,
       versusChampion: selectedVersus || undefined,
-      role: 'ALL',
-      rank: 'ALL',
-      patch: 'latest',
+      role: selectedRole,
+      rank: selectedRank,
+      patch: selectedPatch,
     };
 
     try {
@@ -96,12 +98,12 @@ export default function ChampionBuildsPage() {
 
   useEffect(() => {
     if (!decodedChampion) return;
-    const initialLoadKey = `${decodedChampion}:${profile?.resolvedPlatform || 'la1'}`;
+    const initialLoadKey = `${decodedChampion}:${selectedPlatform}:${selectedRole}:${selectedRank}:${selectedPatch}`;
     if (initialLoadKeyRef.current === initialLoadKey) return;
     initialLoadKeyRef.current = initialLoadKey;
     setVersusInput('');
     loadInsights('');
-  }, [decodedChampion]);
+  }, [decodedChampion, selectedPlatform, selectedRole, selectedRank, selectedPatch]);
 
   const championOptions = useMemo(() => champions.map((champ: any) => champ.name), [champions]);
   const filteredChampionOptions = useMemo(() => {
@@ -123,7 +125,46 @@ export default function ChampionBuildsPage() {
         <section className="rounded-3xl border border-[var(--border-default)] bg-[linear-gradient(110deg,rgba(16,185,129,0.14),rgba(9,9,11,0.92)_35%,rgba(59,130,246,0.2))] p-6">
           <h1 className="text-3xl font-bold text-[var(--text-primary)]">{decodedChampion} · Pro Build Lab</h1>
           <p className="mt-2 text-sm text-[var(--text-secondary)]">Build principal, runas y métricas agregadas de alto elo por parche.</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className="text-xs text-[var(--text-muted)]">Rol</label>
+              <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]">
+                <option value="TOP">Top</option>
+                <option value="JUNGLE">Jungle</option>
+                <option value="MIDDLE">Mid</option>
+                <option value="BOTTOM">ADC</option>
+                <option value="UTILITY">Support</option>
+                <option value="ALL">Todos</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-[var(--text-muted)]">Región</label>
+              <select value={selectedPlatform} onChange={(e) => setSelectedPlatform(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]">
+                <option value="la1">LAN</option>
+                <option value="la2">LAS</option>
+                <option value="na1">NA</option>
+                <option value="euw1">EUW</option>
+                <option value="eun1">EUNE</option>
+                <option value="kr">KR</option>
+                <option value="jp1">JP</option>
+                <option value="br1">BR</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-[var(--text-muted)]">Elo</label>
+              <select value={selectedRank} onChange={(e) => setSelectedRank(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]">
+                <option value="ALL">Todos</option>
+                <option value="CHALLENGER">Challenger</option>
+                <option value="GRANDMASTER">Grandmaster</option>
+                <option value="MASTER">Master</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-[var(--text-muted)]">Patch</label>
+              <input value={selectedPatch} onChange={(e) => setSelectedPatch(e.target.value || 'latest')} placeholder="latest o 16.7" className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]" />
+            </div>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <div>
               <label className="text-xs text-[var(--text-muted)]">Buscar matchup VS campeón</label>
               <input
@@ -178,7 +219,7 @@ export default function ChampionBuildsPage() {
                     <img key={`primary-${item.itemId}`} src={getItemIconUrl(ddragonVersion, item.itemId)} title={item.name} className="h-10 w-10 rounded-md border border-[var(--border-default)]" loading="lazy" decoding="async" />
                   ))}
                 </div>
-                <div className="mt-4 rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">Skill order sugerido: {(data?.overview?.skillOrder || []).join(' > ') || '-'}</div>
+                <div className="mt-4 rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">Skill order más jugado: {(data?.overview?.skillOrder || []).join(' > ') || '-'}</div>
               </div>
 
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">

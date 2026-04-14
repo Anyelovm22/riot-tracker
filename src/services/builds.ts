@@ -42,14 +42,6 @@ function getCachedInsights(cacheKey: string) {
   return cached.data;
 }
 
-export async function fetchBuildsByChampion(params: {
-  puuid: string;
-  platform: string;
-  champion?: string;
-}) {
-  return cachedGet('/builds/by-champion', params, { ttlMs: 1000 * 60 * 2 });
-}
-
 async function fetchChampionBuildInsightsByView(params: BuildInsightsParams, view: 'summary' | 'full') {
   const cacheKey = getInsightsCacheKey(params, view);
   const cached = getCachedInsights(cacheKey);

@@ -31,6 +31,9 @@ type ProMatch = {
   primaryStyle: number;
   subStyle: number;
   keystone: number;
+  spell1Casts: number;
+  spell2Casts: number;
+  spell3Casts: number;
 };
 
 type ItemAggregate = {
@@ -292,6 +295,30 @@ function sortByGamesAndWinrate<T extends { games: number; winRate: number }>(row
   return [...rows].sort((a, b) => b.games - a.games || b.winRate - a.winRate);
 }
 
+function deriveSkillOrder(matches: ProMatch[]) {
+  if (!matches.length) return [];
+
+  let qCasts = 0;
+  let wCasts = 0;
+  let eCasts = 0;
+
+  for (const match of matches) {
+    qCasts += Math.max(0, Number(match.spell1Casts || 0));
+    wCasts += Math.max(0, Number(match.spell2Casts || 0));
+    eCasts += Math.max(0, Number(match.spell3Casts || 0));
+  }
+
+  const ordered = [
+    { spell: 'Q', casts: qCasts },
+    { spell: 'W', casts: wCasts },
+    { spell: 'E', casts: eCasts },
+  ]
+    .sort((a, b) => b.casts - a.casts)
+    .map((row) => row.spell);
+
+  return ordered;
+}
+
 function aggregateItemsBySlot(matches: ProMatch[], itemMap: Record<string, any>) {
   const starter = new Map<number, { games: number; wins: number }>();
   const core1 = new Map<number, { games: number; wins: number }>();
@@ -511,6 +538,7 @@ function buildPayload({
   const matchups = matchupStats.slice(0, 10);
   const counters = [...matchupStats].filter((row) => row.games >= MIN_SAMPLE_SIZE).sort((a, b) => a.winRate - b.winRate).slice(0, 10);
   const itemStatsBySlot = aggregateItemsBySlot(proMatches, itemMap);
+  const skillOrder = deriveSkillOrder(proMatches);
 
   const trendBuckets = [10, 15, 20, 25, 30, 35, 40];
   const trendData = trendBuckets.map((minute) => {
@@ -544,7 +572,7 @@ function buildPayload({
             coreItems: mostPopularBuilds[0].items.slice(1, 4),
           }
         : null,
-      skillOrder: ['Q', 'E', 'W'],
+      skillOrder,
       topRunes,
     },
     itemStats: {
@@ -668,6 +696,9 @@ async function buildChampionInsights(champion: string, platform: string, versusC
           primaryStyle: participant?.perks?.styles?.[0]?.style || 0,
           subStyle: participant?.perks?.styles?.[1]?.style || 0,
           keystone: participant?.perks?.styles?.[0]?.selections?.[0]?.perk || 0,
+          spell1Casts: participant?.spell1Casts || 0,
+          spell2Casts: participant?.spell2Casts || 0,
+          spell3Casts: participant?.spell3Casts || 0,
         } as ProMatch;
       }),
     );
@@ -679,18 +710,40 @@ async function buildChampionInsights(champion: string, platform: string, versusC
     }
   }
 
-  const effectivePatch = normalizedPatch === 'latest' && allRelevantMatches[0]?.patch ? allRelevantMatches[0].patch : patch || 'latest';
+  const latestPatch = allRelevantMatches[0]?.patch || 'latest';
+  const effectivePatch = normalizedPatch === 'latest' ? latestPatch : patch || 'latest';
+  const requestedPatchToken = normalizePatch(patch);
+  const normalizedVersus = String(versusChampion || '').trim();
 
-  const patchFilteredMatches = allRelevantMatches.filter((match) => {
+  const byRole = allRelevantMatches.filter((match) => (normalizedRole === 'ALL' ? true : match.role === normalizedRole));
+  const byRoleAndPatch = byRole.filter((match) => {
     if (normalizedPatch === 'all') return true;
-    if (normalizedPatch === 'latest') return match.patch === effectivePatch;
-    return match.patch === normalizePatch(patch);
+    if (normalizedPatch === 'latest') return match.patch === latestPatch;
+    return match.patch === requestedPatchToken;
+  });
+  const byRoleAnyPatch = byRole;
+  const byAnyRoleAndPatch = allRelevantMatches.filter((match) => {
+    if (normalizedPatch === 'all') return true;
+    if (normalizedPatch === 'latest') return match.patch === latestPatch;
+    return match.patch === requestedPatchToken;
   });
 
-  const normalizedVersus = String(versusChampion || '').trim();
-  let effectiveMatches = patchFilteredMatches;
-  if (normalizedPatch === 'latest' && effectiveMatches.length < MIN_SAMPLE_SIZE && allRelevantMatches.length >= MIN_SAMPLE_SIZE) {
+  let effectiveMatches = byRoleAndPatch;
+  const fallbackReasons: string[] = [];
+
+  if (!effectiveMatches.length && byRoleAnyPatch.length) {
+    effectiveMatches = byRoleAnyPatch;
+    fallbackReasons.push('No había muestra suficiente en el parche solicitado; se usaron todos los parches disponibles para ese rol.');
+  }
+
+  if (!effectiveMatches.length && byAnyRoleAndPatch.length) {
+    effectiveMatches = byAnyRoleAndPatch;
+    fallbackReasons.push('No había muestra suficiente en el rol solicitado; se usaron todos los roles para el parche filtrado.');
+  }
+
+  if (!effectiveMatches.length && allRelevantMatches.length) {
     effectiveMatches = allRelevantMatches;
+    fallbackReasons.push('No había muestra suficiente con los filtros seleccionados; se mostró el agregado general del campeón.');
   }
 
   const eligibleGames = effectiveMatches.length;
@@ -722,7 +775,9 @@ async function buildChampionInsights(champion: string, platform: string, versusC
         ...fallbackPayload,
         requestedVersusChampion: normalizedVersus,
         appliedFallback: true,
-        fallbackReason: 'No había muestra suficiente para ese matchup exacto. Se mostró la build general del campeón.',
+        fallbackReason: ['No había muestra suficiente para ese matchup exacto. Se mostró la build general del campeón.', ...fallbackReasons]
+          .filter(Boolean)
+          .join(' '),
       },
     };
   }
@@ -739,7 +794,15 @@ async function buildChampionInsights(champion: string, platform: string, versusC
     itemMap: items,
   });
 
-  return { status: 200, payload };
+  const withFallbackNotice = fallbackReasons.length
+    ? {
+        ...payload,
+        appliedFallback: true,
+        fallbackReason: fallbackReasons.join(' '),
+      }
+    : payload;
+
+  return { status: 200, payload: withFallbackNotice };
 }
 
 function toSummary(payload: ChampionInsightsPayload) {
@@ -764,70 +827,6 @@ function toSummary(payload: ChampionInsightsPayload) {
     charts: payload.charts,
     cacheMeta: payload.cacheMeta,
   };
-}
-
-export async function getBuildsByChampion(req: Request, res: Response) {
-  try {
-    const puuid = String(req.query.puuid || '').trim();
-    const platform = String(req.query.platform || 'la1').trim().toLowerCase();
-    const champion = String(req.query.champion || '').trim();
-
-    if (!puuid) {
-      return res.status(400).json({ message: 'puuid is required' });
-    }
-
-    const matchIds = await getMatchIdsByPuuid(puuid, platform, 20, 0);
-    const matches = await Promise.all(matchIds.map((id: string) => getMatchById(id, platform)));
-    const { items } = await getItemData();
-
-    type MatchParticipant = {
-      puuid: string;
-      championName?: string;
-      item0?: number;
-      item1?: number;
-      item2?: number;
-      item3?: number;
-      item4?: number;
-      item5?: number;
-    };
-
-    const relevantPlayers: MatchParticipant[] = matches
-      .map((match: any) => match?.info?.participants?.find((p: MatchParticipant) => p.puuid === puuid) || null)
-      .filter((p): p is MatchParticipant => p !== null)
-      .filter((p) => (champion ? p.championName === champion : true));
-
-    const itemCounts = new Map<number, number>();
-
-    for (const player of relevantPlayers) {
-      const slots = [player.item0, player.item1, player.item2, player.item3, player.item4, player.item5];
-
-      for (const itemId of slots) {
-        if (itemId && itemId !== 0) {
-          itemCounts.set(itemId, (itemCounts.get(itemId) || 0) + 1);
-        }
-      }
-    }
-
-    const topItems = [...itemCounts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 12)
-      .map(([itemId, count]) => ({
-        itemId,
-        count,
-        itemData: items[String(itemId)] || null,
-      }));
-
-    res.json({
-      champion: champion || null,
-      sampleSize: relevantPlayers.length,
-      topItems,
-    });
-  } catch (error: any) {
-    res.status(error?.response?.status || 500).json({
-      message: 'Error generating builds',
-      detail: error?.response?.data || null,
-    });
-  }
 }
 
 export async function getChampionBuildInsights(req: Request, res: Response) {

@@ -50,6 +50,7 @@ export default function ChampionBuildsPage() {
   const championOptions = useMemo(() => champions.map((champ: any) => champ.name), [champions]);
   const maxRoleGames = Math.max(1, ...(data?.roleStats || []).map((row: any) => row.games || 0));
   const maxMatchupGames = Math.max(1, ...(data?.topMatchups || []).map((row: any) => row.games || 0));
+  const maxBuildGames = Math.max(1, ...(data?.topBuilds || []).map((build: any) => build.games || 0));
 
   return (
     <main className="page-shell">
@@ -91,6 +92,12 @@ export default function ChampionBuildsPage() {
 
         {!loading && !error && data ? (
           <>
+        {data?.appliedFallback ? (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            {data.fallbackReason}
+          </div>
+        ) : null}
+
             <section className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
                 <p className="text-xs uppercase text-[var(--text-muted)]">Campeón</p>
@@ -110,10 +117,21 @@ export default function ChampionBuildsPage() {
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">Builds más jugadas</h2>
               <div className="mt-4 space-y-3">
                 {(data.topBuilds || []).map((build: any, index: number) => (
-                  <div key={index} className="rounded-xl bg-[var(--bg-elevated)] p-4">
-                    <p className="text-sm text-[var(--text-secondary)]">
-                      {build.games} partidas · WR {build.winRate}%
-                    </p>
+                  <div key={index} className="rounded-xl border border-[var(--border-default)] bg-[linear-gradient(130deg,rgba(59,130,246,0.14),rgba(9,9,11,0.88)_45%,rgba(16,185,129,0.12))] p-4 shadow-lg shadow-black/10">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        {build.games} partidas · WR {build.winRate}%
+                      </p>
+                      <span className="rounded-full bg-emerald-500/20 px-2 py-1 text-xs font-semibold text-emerald-300">
+                        Build #{index + 1}
+                      </span>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/20">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500"
+                        style={{ width: `${Math.max(10, (build.games / maxBuildGames) * 100)}%` }}
+                      />
+                    </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {(build.items || []).map((item: any) => (
                         <img
@@ -121,6 +139,8 @@ export default function ChampionBuildsPage() {
                           src={getItemIconUrl(ddragonVersion, item.itemId)}
                           title={item.name}
                           className="h-10 w-10 rounded-md border border-[var(--border-default)]"
+                          loading="lazy"
+                          decoding="async"
                         />
                       ))}
                     </div>
@@ -140,6 +160,8 @@ export default function ChampionBuildsPage() {
                         src={getItemIconUrl(ddragonVersion, item.itemId)}
                         title={`${item.name} · ${item.count} partidas`}
                         className="h-11 w-11 rounded-md border border-[var(--border-default)]"
+                        loading="lazy"
+                        decoding="async"
                       />
                       <span className="absolute -bottom-2 -right-2 rounded-full bg-[var(--accent-primary)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
                         {item.count}
@@ -232,6 +254,8 @@ export default function ChampionBuildsPage() {
                           key={`${match.matchId}-${itemId}`}
                           src={getItemIconUrl(ddragonVersion, itemId)}
                           className="h-8 w-8 rounded border border-[var(--border-default)]"
+                          loading="lazy"
+                          decoding="async"
                         />
                       ))}
                     </div>

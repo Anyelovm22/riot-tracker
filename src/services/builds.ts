@@ -13,7 +13,7 @@ type CacheEntry = {
 
 const insightsMemoryCache = new Map<string, CacheEntry>();
 const inFlightInsights = new Map<string, Promise<any>>();
-const INSIGHTS_TTL_MS = 1000 * 60 * 3;
+const INSIGHTS_TTL_MS = 1000 * 60 * 30;
 
 function getInsightsCacheKey(params: BuildInsightsParams) {
   return `${params.platform}:${params.champion.toLowerCase()}:${(params.versusChampion || '').toLowerCase()}`;

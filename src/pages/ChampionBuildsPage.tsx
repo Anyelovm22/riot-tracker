@@ -18,6 +18,7 @@ export default function ChampionBuildsPage() {
   const [error, setError] = useState('');
   const [versusInput, setVersusInput] = useState('');
   const requestIdRef = useRef(0);
+  const initialLoadKeyRef = useRef('');
 
   const decodedChampion = decodeURIComponent(championName);
 
@@ -56,12 +57,14 @@ export default function ChampionBuildsPage() {
       if (requestIdRef.current === nextRequestId) {
         setLoading(false);
       }
-      setLoading(false);
     }
   }
 
   useEffect(() => {
     if (!decodedChampion) return;
+    const initialLoadKey = `${decodedChampion}:${profile?.resolvedPlatform || 'la1'}`;
+    if (initialLoadKeyRef.current === initialLoadKey) return;
+    initialLoadKeyRef.current = initialLoadKey;
     setVersusInput('');
     setVersusChampion('');
     loadInsights('');
@@ -124,7 +127,41 @@ export default function ChampionBuildsPage() {
           </div>
         </section>
 
-        {loading ? <div className="rounded-2xl bg-[var(--bg-card)] p-6">Cargando datos de pro players...</div> : null}
+        {loading ? (
+          <div className="grid gap-4">
+            <div className="animate-pulse rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6">
+              <div className="h-4 w-40 rounded bg-white/10" />
+              <div className="mt-3 h-3 w-72 rounded bg-white/10" />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="animate-pulse rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"
+                >
+                  <div className="h-3 w-20 rounded bg-white/10" />
+                  <div className="mt-3 h-6 w-24 rounded bg-white/10" />
+                </div>
+              ))}
+            </div>
+            <div className="animate-pulse rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+              <div className="h-4 w-48 rounded bg-white/10" />
+              <div className="mt-4 space-y-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="rounded-xl border border-[var(--border-default)] p-4">
+                    <div className="h-3 w-36 rounded bg-white/10" />
+                    <div className="mt-3 h-2 w-full rounded bg-white/10" />
+                    <div className="mt-3 flex gap-2">
+                      {Array.from({ length: 5 }).map((__, imageIndex) => (
+                        <div key={imageIndex} className="h-10 w-10 rounded-md bg-white/10" />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
         {error ? <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-red-200">{error}</div> : null}
 
         {!loading && !error && data ? (

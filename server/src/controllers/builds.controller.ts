@@ -1,4 +1,6 @@
 import { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import {
   getChampionList,
   getEliteLeagueEntries,
@@ -14,8 +16,13 @@ type CachedInsight = {
 
 const championInsightsCache = new Map<string, CachedInsight>();
 const championInsightsInFlight = new Map<string, Promise<any>>();
-const INSIGHTS_CACHE_TTL_MS = 1000 * 60 * 4;
-const MATCH_FETCH_CONCURRENCY = 6;
+const INSIGHTS_CACHE_TTL_MS = 1000 * 60 * 30;
+const MATCH_FETCH_CONCURRENCY = 15;
+const TOP_PLAYERS_LIMIT = 15;
+const MATCH_IDS_PER_PLAYER = 8;
+const TARGET_PRO_MATCHES = 35;
+const championInsightsCachePath = path.join(process.cwd(), 'server', 'src', 'data', 'championInsightsCache.json');
+let persistentCacheLoaded = false;
 
 function normalizeCacheToken(value: string) {
   return String(value || '')
@@ -29,12 +36,50 @@ function getInsightCacheKey(champion: string, platform: string, versusChampion: 
   return `${platform}:${normalizeCacheToken(champion)}:${normalizeCacheToken(versusChampion)}`;
 }
 
+function loadPersistentInsightCache() {
+  if (persistentCacheLoaded) return;
+  persistentCacheLoaded = true;
+
+  try {
+    if (!fs.existsSync(championInsightsCachePath)) return;
+    const raw = fs.readFileSync(championInsightsCachePath, 'utf-8');
+    const parsed = JSON.parse(raw || '{}') as Record<string, CachedInsight>;
+    const now = Date.now();
+
+    for (const [key, entry] of Object.entries(parsed)) {
+      if (!entry || typeof entry.expiresAt !== 'number' || entry.expiresAt <= now) continue;
+      championInsightsCache.set(key, entry);
+    }
+  } catch {
+    // ignore cache restore errors
+  }
+}
+
+function persistInsightCache() {
+  try {
+    fs.mkdirSync(path.dirname(championInsightsCachePath), { recursive: true });
+    const now = Date.now();
+    const serialized: Record<string, CachedInsight> = {};
+
+    for (const [key, entry] of championInsightsCache.entries()) {
+      if (!entry || entry.expiresAt <= now) continue;
+      serialized[key] = entry;
+    }
+
+    fs.writeFileSync(championInsightsCachePath, JSON.stringify(serialized), 'utf-8');
+  } catch {
+    // ignore persistence errors
+  }
+}
+
 function getCachedInsight(cacheKey: string) {
+  loadPersistentInsightCache();
   const cached = championInsightsCache.get(cacheKey);
   if (!cached) return null;
 
   if (Date.now() > cached.expiresAt) {
     championInsightsCache.delete(cacheKey);
+    persistInsightCache();
     return null;
   }
 
@@ -42,10 +87,12 @@ function getCachedInsight(cacheKey: string) {
 }
 
 function rememberInsight(cacheKey: string, payload: any) {
+  loadPersistentInsightCache();
   championInsightsCache.set(cacheKey, {
     payload,
     expiresAt: Date.now() + INSIGHTS_CACHE_TTL_MS,
   });
+  persistInsightCache();
 }
 
 export async function getBuildsByChampion(req: Request, res: Response) {
@@ -139,11 +186,11 @@ async function buildChampionInsights(champion: string, platform: string, versusC
   const topPlayers = (eliteEntries || [])
     .filter((entry: any) => entry?.puuid)
     .sort((a: any, b: any) => (b.leaguePoints || 0) - (a.leaguePoints || 0))
-    .slice(0, 25);
+    .slice(0, TOP_PLAYERS_LIMIT);
 
   const matchIdResults = await Promise.allSettled(
     topPlayers.map(async (entry: any) => {
-      const matchIds = await getMatchIdsByPuuid(entry.puuid, platform, 12, 0).catch(() => []);
+      const matchIds = await getMatchIdsByPuuid(entry.puuid, platform, MATCH_IDS_PER_PLAYER, 0).catch(() => []);
       return {
         entry,
         matchIds,
@@ -166,7 +213,11 @@ async function buildChampionInsights(champion: string, platform: string, versusC
 
   const proMatches: any[] = [];
 
-  for (let index = 0; index < pendingMatches.length && proMatches.length < 35; index += MATCH_FETCH_CONCURRENCY) {
+  for (
+    let index = 0;
+    index < pendingMatches.length && proMatches.length < TARGET_PRO_MATCHES;
+    index += MATCH_FETCH_CONCURRENCY
+  ) {
     const batch = pendingMatches.slice(index, index + MATCH_FETCH_CONCURRENCY);
     const matches = await Promise.all(
       batch.map(async ({ entry, matchId }) => {
@@ -210,7 +261,7 @@ async function buildChampionInsights(champion: string, platform: string, versusC
     for (const processedMatch of matches) {
       if (!processedMatch) continue;
       proMatches.push(processedMatch);
-      if (proMatches.length >= 35) break;
+      if (proMatches.length >= TARGET_PRO_MATCHES) break;
     }
   }
 

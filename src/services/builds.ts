@@ -4,6 +4,9 @@ type BuildInsightsParams = {
   champion: string;
   platform: string;
   versusChampion?: string;
+  role?: string;
+  rank?: string;
+  patch?: string;
 };
 
 type CacheEntry = {
@@ -15,8 +18,16 @@ const insightsMemoryCache = new Map<string, CacheEntry>();
 const inFlightInsights = new Map<string, Promise<any>>();
 const INSIGHTS_TTL_MS = 1000 * 60 * 30;
 
-function getInsightsCacheKey(params: BuildInsightsParams) {
-  return `${params.platform}:${params.champion.toLowerCase()}:${(params.versusChampion || '').toLowerCase()}`;
+function getInsightsCacheKey(params: BuildInsightsParams, view: 'summary' | 'full') {
+  return [
+    params.platform,
+    params.champion.toLowerCase(),
+    (params.versusChampion || '').toLowerCase(),
+    (params.role || 'ALL').toLowerCase(),
+    (params.rank || 'ALL').toLowerCase(),
+    (params.patch || 'latest').toLowerCase(),
+    view,
+  ].join(':');
 }
 
 function getCachedInsights(cacheKey: string) {
@@ -39,8 +50,8 @@ export async function fetchBuildsByChampion(params: {
   return cachedGet('/builds/by-champion', params, { ttlMs: 1000 * 60 * 2 });
 }
 
-export async function fetchChampionBuildInsights(params: BuildInsightsParams) {
-  const cacheKey = getInsightsCacheKey(params);
+async function fetchChampionBuildInsightsByView(params: BuildInsightsParams, view: 'summary' | 'full') {
+  const cacheKey = getInsightsCacheKey(params, view);
   const cached = getCachedInsights(cacheKey);
   if (cached) return cached;
 
@@ -49,9 +60,7 @@ export async function fetchChampionBuildInsights(params: BuildInsightsParams) {
     return existingPromise;
   }
 
-  const request = cachedGet('/builds/champion-insights', params, {
-    ttlMs: INSIGHTS_TTL_MS,
-  })
+  const request = cachedGet('/builds/champion-insights', { ...params, view }, { ttlMs: INSIGHTS_TTL_MS })
     .then((data) => {
       insightsMemoryCache.set(cacheKey, {
         data,
@@ -64,6 +73,13 @@ export async function fetchChampionBuildInsights(params: BuildInsightsParams) {
     });
 
   inFlightInsights.set(cacheKey, request);
-
   return request;
+}
+
+export function fetchChampionBuildSummary(params: BuildInsightsParams) {
+  return fetchChampionBuildInsightsByView(params, 'summary');
+}
+
+export function fetchChampionBuildInsights(params: BuildInsightsParams) {
+  return fetchChampionBuildInsightsByView(params, 'full');
 }

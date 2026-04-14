@@ -1,20 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import BackButton from '../components/common/BackButton';
 import { fetchChampions } from '../services/champions';
-import { fetchChampionBuildInsights } from '../services/builds';
+import { fetchChampionBuildInsights, fetchChampionBuildSummary } from '../services/builds';
 import { readStoredProfile } from '../utils/profileStorage';
 import { getItemIconUrl, getLatestDdragonVersion } from '../utils/ddragonVersion';
+
+const BuildWinrateChart = lazy(() => import('../components/builds/BuildWinrateChart'));
 
 export default function ChampionBuildsPage() {
   const { championName = '' } = useParams();
   const profile = readStoredProfile();
   const [champions, setChampions] = useState<any[]>([]);
-  const [versusChampion, setVersusChampion] = useState('');
-  const [data, setData] = useState<any>(null);
+  const [summaryData, setSummaryData] = useState<any>(null);
+  const [detailsData, setDetailsData] = useState<any>(null);
   const [ddragonVersion, setDdragonVersion] = useState('15.7.1');
-  const [loading, setLoading] = useState(true);
+  const [loadingSummary, setLoadingSummary] = useState(true);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const [error, setError] = useState('');
   const [versusInput, setVersusInput] = useState('');
   const requestIdRef = useRef(0);
@@ -29,33 +31,65 @@ export default function ChampionBuildsPage() {
       .catch(() => setChampions([]));
   }, []);
 
+  const loadDetailsDeferred = (params: any, requestId: number) => {
+    const run = () => {
+      setLoadingDetails(true);
+      fetchChampionBuildInsights(params)
+        .then((result) => {
+          if (requestIdRef.current !== requestId) return;
+          setDetailsData(result);
+        })
+        .catch(() => {
+          if (requestIdRef.current !== requestId) return;
+          setDetailsData(null);
+        })
+        .finally(() => {
+          if (requestIdRef.current === requestId) {
+            setLoadingDetails(false);
+          }
+        });
+    };
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(run, { timeout: 900 });
+      return;
+    }
+
+    setTimeout(run, 80);
+  };
+
   async function loadInsights(nextVersus?: string) {
     const nextRequestId = requestIdRef.current + 1;
     requestIdRef.current = nextRequestId;
-    try {
-      setLoading(true);
-      setError('');
-      const selectedVersus = (nextVersus || '').trim();
-      const result = await fetchChampionBuildInsights({
-        champion: decodedChampion,
-        platform: profile?.resolvedPlatform || 'la1',
-        versusChampion: selectedVersus  || undefined,
-      });
 
-      if (requestIdRef.current !== nextRequestId) {
-        return;
-      }
-      setData(result);
-      setVersusChampion(selectedVersus);
+    const selectedVersus = (nextVersus || '').trim();
+    const sharedParams = {
+      champion: decodedChampion,
+      platform: profile?.resolvedPlatform || 'la1',
+      versusChampion: selectedVersus || undefined,
+      role: 'ALL',
+      rank: 'ALL',
+      patch: 'latest',
+    };
+
+    try {
+      setLoadingSummary(true);
+      setLoadingDetails(false);
+      setError('');
+      setDetailsData(null);
+
+      const summaryResult = await fetchChampionBuildSummary(sharedParams);
+      if (requestIdRef.current !== nextRequestId) return;
+
+      setSummaryData(summaryResult);
       setVersusInput(selectedVersus);
+      loadDetailsDeferred(sharedParams, nextRequestId);
     } catch (err: any) {
-      if (requestIdRef.current !== nextRequestId) {
-        return;
-      }
+      if (requestIdRef.current !== nextRequestId) return;
       setError(err?.response?.data?.message || 'No se pudo cargar el análisis de builds');
     } finally {
       if (requestIdRef.current === nextRequestId) {
-        setLoading(false);
+        setLoadingSummary(false);
       }
     }
   }
@@ -66,7 +100,6 @@ export default function ChampionBuildsPage() {
     if (initialLoadKeyRef.current === initialLoadKey) return;
     initialLoadKeyRef.current = initialLoadKey;
     setVersusInput('');
-    setVersusChampion('');
     loadInsights('');
   }, [decodedChampion]);
 
@@ -75,22 +108,12 @@ export default function ChampionBuildsPage() {
     const normalizedQuery = versusInput.trim().toLowerCase();
     if (!normalizedQuery) return championOptions.slice(0, 40);
 
-    return championOptions
-      .filter((name) => name.toLowerCase().includes(normalizedQuery))
-      .slice(0, 40);
+    return championOptions.filter((name) => name.toLowerCase().includes(normalizedQuery)).slice(0, 40);
   }, [championOptions, versusInput]);
-  const maxRoleGames = Math.max(1, ...(data?.roleStats || []).map((row: any) => row.games || 0));
-  const maxMatchupGames = Math.max(1, ...(data?.topMatchups || []).map((row: any) => row.games || 0));
-  const maxBuildGames = Math.max(1, ...(data?.topBuilds || []).map((build: any) => build.games || 0));
-  const buildWinrateChart = useMemo(
-    () =>
-      (data?.topBuilds || []).map((build: any, index: number) => ({
-        name: `Build ${index + 1}`,
-        winRate: build.winRate,
-        games: build.games,
-      })),
-    [data]
-  );
+
+  const data = detailsData || summaryData;
+  const maxRoleGames = Math.max(1, ...(data?.charts?.roleDistribution?.values || [0]));
+  const maxMatchupGames = Math.max(1, ...((detailsData?.secondary?.matchups || []).map((row: any) => row.games || 0)));
 
   return (
     <main className="page-shell">
@@ -99,9 +122,7 @@ export default function ChampionBuildsPage() {
 
         <section className="rounded-3xl border border-[var(--border-default)] bg-[linear-gradient(110deg,rgba(16,185,129,0.14),rgba(9,9,11,0.92)_35%,rgba(59,130,246,0.2))] p-6">
           <h1 className="text-3xl font-bold text-[var(--text-primary)]">{decodedChampion} · Pro Build Lab</h1>
-          <p className="mt-2 text-sm text-[var(--text-secondary)]">
-            Builds por campeón con winrate por composición, runas e información de matchups en high elo.
-          </p>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">Build principal, runas y métricas agregadas de alto elo por parche.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <div>
               <label className="text-xs text-[var(--text-muted)]">Buscar matchup VS campeón</label>
@@ -118,236 +139,152 @@ export default function ChampionBuildsPage() {
                 ))}
               </datalist>
             </div>
-            <button
-              onClick={() => loadInsights(versusInput)}
-              className="h-fit self-end rounded-xl bg-[var(--accent-primary)] px-4 py-2 text-sm font-medium text-white"
-            >
+            <button onClick={() => loadInsights(versusInput)} className="h-fit self-end rounded-xl bg-[var(--accent-primary)] px-4 py-2 text-sm font-medium text-white">
               Aplicar VS
             </button>
           </div>
         </section>
 
-        {loading ? (
-          <div className="grid gap-4">
-            <div className="animate-pulse rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6">
-              <div className="h-4 w-40 rounded bg-white/10" />
-              <div className="mt-3 h-3 w-72 rounded bg-white/10" />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="animate-pulse rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"
-                >
-                  <div className="h-3 w-20 rounded bg-white/10" />
-                  <div className="mt-3 h-6 w-24 rounded bg-white/10" />
-                </div>
-              ))}
-            </div>
-            <div className="animate-pulse rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
-              <div className="h-4 w-48 rounded bg-white/10" />
-              <div className="mt-4 space-y-3">
-                {Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="rounded-xl border border-[var(--border-default)] p-4">
-                    <div className="h-3 w-36 rounded bg-white/10" />
-                    <div className="mt-3 h-2 w-full rounded bg-white/10" />
-                    <div className="mt-3 flex gap-2">
-                      {Array.from({ length: 5 }).map((__, imageIndex) => (
-                        <div key={imageIndex} className="h-10 w-10 rounded-md bg-white/10" />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+        {loadingSummary ? (
+          <div className="grid gap-4 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="animate-pulse rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
+                <div className="h-3 w-20 rounded bg-white/10" />
+                <div className="mt-3 h-6 w-24 rounded bg-white/10" />
               </div>
-            </div>
+            ))}
           </div>
         ) : null}
+
         {error ? <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-red-200">{error}</div> : null}
 
-        {!loading && !error && data ? (
+        {!loadingSummary && !error && data ? (
           <>
-            {data?.appliedFallback ? (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-                {data.fallbackReason}
-              </div>
-            ) : null}
+            {data?.appliedFallback ? <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">{data.fallbackReason}</div> : null}
 
             <section className="grid gap-4 sm:grid-cols-4">
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
-                <p className="text-xs uppercase text-[var(--text-muted)]">Campeón</p>
-                <p className="mt-2 text-xl font-semibold text-[var(--text-primary)]">{data.champion}</p>
-              </div>
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
-                <p className="text-xs uppercase text-[var(--text-muted)]">Sample size</p>
-                <p className="mt-2 text-xl font-semibold text-[var(--text-primary)]">{data.sampleSize || 0}</p>
-              </div>
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
-                <p className="text-xs uppercase text-[var(--text-muted)]">Filtro VS</p>
-                <p className="mt-2 text-xl font-semibold text-[var(--text-primary)]">{versusChampion || 'Todos'}</p>
-              </div>
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4">
-                <p className="text-xs uppercase text-[var(--text-muted)]">Última actualización</p>
-                <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">
-                  {data?.cacheMeta?.generatedAt
-                    ? new Date(data.cacheMeta.generatedAt).toLocaleString()
-                    : 'En vivo'}
-                </p>
-              </div>
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"><p className="text-xs uppercase text-[var(--text-muted)]">Winrate</p><p className="mt-2 text-xl font-semibold text-[var(--text-primary)]">{data.winRate}%</p></div>
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"><p className="text-xs uppercase text-[var(--text-muted)]">Pickrate</p><p className="mt-2 text-xl font-semibold text-[var(--text-primary)]">{data.pickRate}%</p></div>
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"><p className="text-xs uppercase text-[var(--text-muted)]">Sample size</p><p className="mt-2 text-xl font-semibold text-[var(--text-primary)]">{data.sampleSize || 0}</p></div>
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"><p className="text-xs uppercase text-[var(--text-muted)]">Patch / Región</p><p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{data.patch} · {data.region}</p></div>
             </section>
 
-            <section className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
+            <section className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Builds más jugadas</h2>
-                <div className="mt-4 space-y-3">
-                  {(data.topBuilds || []).map((build: any, index: number) => (
-                    <div
-                      key={index}
-                      className="rounded-xl border border-[var(--border-default)] bg-[linear-gradient(130deg,rgba(59,130,246,0.14),rgba(9,9,11,0.88)_45%,rgba(16,185,129,0.12))] p-4 shadow-lg shadow-black/10"
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-[var(--text-secondary)]">
-                          {build.games} partidas · WR {build.winRate}%
-                        </p>
-                        <span className="rounded-full bg-emerald-500/20 px-2 py-1 text-xs font-semibold text-emerald-300">
-                          Build #{index + 1}
-                        </span>
-                      </div>
-                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/20">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500"
-                          style={{ width: `${Math.max(10, (build.games / maxBuildGames) * 100)}%` }}
-                        />
-                        </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {(build.items || []).map((item: any) => (
-                          <img
-                            key={`${index}-${item.itemId}`}
-                            src={getItemIconUrl(ddragonVersion, item.itemId)}
-                            title={item.name}
-                            className="h-10 w-10 rounded-md border border-[var(--border-default)]"
-                            loading="lazy"
-                            decoding="async"
-                          />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Build principal</h2>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">{data?.overview?.primaryBuild?.games || 0} partidas · WR {data?.overview?.primaryBuild?.winRate || 0}%</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(data?.overview?.primaryBuild?.items || []).map((item: any) => (
+                    <img key={`primary-${item.itemId}`} src={getItemIconUrl(ddragonVersion, item.itemId)} title={item.name} className="h-10 w-10 rounded-md border border-[var(--border-default)]" loading="lazy" decoding="async" />
+                  ))}
+                </div>
+                <div className="mt-4 rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">Skill order sugerido: {(data?.overview?.skillOrder || []).join(' > ') || '-'}</div>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Items por posición</h2>
+                <div className="mt-3 space-y-3 text-xs">
+                  {Object.entries(data?.itemStats?.bySlot || {}).map(([slot, items]: [string, any]) => (
+                    <div key={slot}>
+                      <p className="mb-1 font-medium uppercase text-[var(--text-muted)]">{slot}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(items || []).slice(0, 5).map((item: any) => (
+                          <div key={`${slot}-${item.itemId}`} className="relative">
+                            <img src={getItemIconUrl(ddragonVersion, item.itemId)} title={`${item.name} · WR ${item.winRate}%`} className="h-9 w-9 rounded-md border border-[var(--border-default)]" loading="lazy" decoding="async" />
+                            {!item.sampleQualified ? <span className="absolute -top-1 -right-1 rounded-full bg-amber-500 px-1 text-[9px] text-black">!</span> : null}
+                          </div>
                         ))}
                       </div>
                     </div>
-                   ))}
+                  ))}
                 </div>
               </div>
+            </section>
 
+            <section className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Builds más populares</h2>
+                <div className="mt-3 space-y-2">
+                  {(data?.builds?.mostPopular || []).map((build: any, index: number) => (
+                    <div key={`popular-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-xs">
+                      <p className="text-[var(--text-secondary)]">{build.games} partidas · WR {build.winRate}% · Pick {build.popularity}% {!build.sampleQualified ? '· muestra baja' : ''}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Builds con mejor performance</h2>
+                <div className="mt-3 space-y-2">
+                  {(data?.builds?.bestPerformance || []).map((build: any, index: number) => (
+                    <div key={`best-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">{build.games} partidas · WR {build.winRate}%</div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
                 <h2 className="text-lg font-semibold text-[var(--text-primary)]">Winrate por build</h2>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">Comparación de WR y volumen de partidas por build.</p>
                 <div className="mt-4 h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={buildWinrateChart}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" />
-                      <XAxis dataKey="name" stroke="#94a3b8" />
-                      <YAxis stroke="#94a3b8" domain={[0, 100]} />
-                      <Tooltip
-                        formatter={(value: any, key: any) =>
-                          key === 'winRate' ? [`${value}%`, 'Win rate'] : [value, 'Partidas']
-                        }
-                        contentStyle={{
-                          borderRadius: 12,
-                          border: '1px solid rgba(148, 163, 184, 0.2)',
-                          background: '#0b1120',
-                        }}
-                      />
-                      <Bar dataKey="winRate" fill="#22d3ee" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </section>
-
-            <section className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Items recomendados</h2>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">Frecuencia total en partidas high elo del campeón.</p>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  {(data.recommendedItems || []).map((item: any) => (
-                    <div key={`recommended-${item.itemId}`} className="group relative">
-                      <img
-                        src={getItemIconUrl(ddragonVersion, item.itemId)}
-                        title={`${item.name} · ${item.count} partidas`}
-                        className="h-11 w-11 rounded-md border border-[var(--border-default)]"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <span className="absolute -bottom-2 -right-2 rounded-full bg-[var(--accent-primary)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        {item.count}
-                      </span>
-                    </div>
-                  ))}
+                  <Suspense fallback={<div className="h-full animate-pulse rounded-lg bg-white/5" />}>
+                    <BuildWinrateChart
+                      labels={data?.charts?.buildWinrate?.labels || []}
+                      percentages={data?.charts?.buildWinrate?.percentages || []}
+                      values={data?.charts?.buildWinrate?.values || []}
+                    />
+                  </Suspense>
                 </div>
               </div>
 
               <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Runas más usadas</h2>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">Setup primario/secundario + keystone.</p>
-                <div className="mt-4 space-y-2">
-                  {(data.topRunes || []).map((rune: any, index: number) => (
-                    <div key={`rune-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-sm">
-                      <p className="font-medium text-[var(--text-primary)]">
-                        Keystone {rune.keystone} · Style {rune.primaryStyle}/{rune.subStyle}
-                      </p>
-                      <p className="text-[var(--text-secondary)]">
-                        {rune.games} partidas · WR {rune.winRate}%
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <section className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Gráfica por línea</h2>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">Distribución de partidas por rol (línea).</p>
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Distribución por rol</h2>
                 <div className="mt-4 space-y-3">
-                  {(data.roleStats || []).map((row: any) => (
-                    <div key={`role-${row.role}`}>
-                      <div className="mb-1 flex items-center justify-between text-xs">
-                        <span className="font-medium text-[var(--text-primary)]">{row.role}</span>
-                        <span className="text-[var(--text-secondary)]">
-                          {row.games} partidas · WR {row.winRate}%
-                        </span>
+                  {(data?.charts?.roleDistribution?.labels || []).map((label: string, index: number) => {
+                    const games = data?.charts?.roleDistribution?.values?.[index] || 0;
+                    const wr = data?.charts?.roleDistribution?.percentages?.[index] || 0;
+                    return (
+                      <div key={`role-${label}`}>
+                        <div className="mb-1 flex items-center justify-between text-xs">
+                          <span className="font-medium text-[var(--text-primary)]">{label}</span>
+                          <span className="text-[var(--text-secondary)]">{games} partidas · WR {wr}%</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)]"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500" style={{ width: `${Math.max(8, (games / maxRoleGames) * 100)}%` }} /></div>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500"
-                          style={{ width: `${Math.max(8, (row.games / maxRoleGames) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Gráfica de matchups de línea</h2>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">Rivales más frecuentes en línea.</p>
-                <div className="mt-4 space-y-3">
-                  {(data.topMatchups || []).map((row: any) => (
-                    <div key={`matchup-${row.championName}`}>
-                      <div className="mb-1 flex items-center justify-between text-xs">
-                        <span className="font-medium text-[var(--text-primary)]">{row.championName}</span>
-                        <span className="text-[var(--text-secondary)]">
-                          {row.games} partidas · WR {row.winRate}%
-                        </span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
-                          style={{ width: `${Math.max(8, (row.games / maxMatchupGames) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </section>
+
+            {loadingDetails ? (
+              <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                <div className="h-4 w-44 animate-pulse rounded bg-white/10" />
+              </section>
+            ) : null}
+
+            {!loadingDetails && detailsData ? (
+              <section className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">Matchups frecuentes</h2>
+                  <div className="mt-4 space-y-3">
+                    {(detailsData?.secondary?.matchups || []).map((row: any) => (
+                      <div key={`matchup-${row.championName}`}>
+                        <div className="mb-1 flex items-center justify-between text-xs"><span className="font-medium text-[var(--text-primary)]">{row.championName}</span><span className="text-[var(--text-secondary)]">{row.games} partidas · WR {row.winRate}%</span></div>
+                        <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)]"><div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${Math.max(8, (row.games / maxMatchupGames) * 100)}%` }} /></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">Counters (muestra mínima)</h2>
+                  <div className="mt-3 space-y-2">
+                    {(detailsData?.secondary?.counters || []).map((row: any) => (
+                      <div key={`counter-${row.championName}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">{row.championName} · {row.games} partidas · WR {row.winRate}%</div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            ) : null}
           </>
         ) : null}
       </div>

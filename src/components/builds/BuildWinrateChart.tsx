@@ -11,7 +11,11 @@ export default function BuildWinrateChart({ labels, percentages, values }: Props
     label,
     winRate: percentages[index] || 0,
     games: values[index] || 0,
-  }));
+  })).filter((row) => Number.isFinite(row.winRate) && Number.isFinite(row.games));
+
+  if (!chartData.length) {
+    return <div className="flex h-full items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-sm text-[var(--text-secondary)]">Sin datos suficientes para la gráfica.</div>;
+  }
 
   return (
     <ResponsiveContainer width="100%" height="100%">

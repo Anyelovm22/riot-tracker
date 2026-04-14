@@ -11,7 +11,7 @@ function requireEnv(name: string): string {
 }
 
 export const env = {
-  PORT: Number(process.env.PORT || 4000),
+  PORT: Number(process.env.PORT || 1000),
   RIOT_API_KEY: requireEnv('RIOT_API_KEY'),
   OLLAMA_URL: process.env.OLLAMA_URL || 'http://localhost:11434',
   AI_PROVIDER: process.env.AI_PROVIDER || 'rules',

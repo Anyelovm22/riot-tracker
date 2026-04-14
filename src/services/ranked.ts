@@ -1,9 +1,8 @@
-import { api } from './api';
+import { cachedGet } from './api';
 
 export async function fetchRankedOverview(params: {
   puuid: string;
   platform: string;
 }) {
-  const { data } = await api.get('/ranked/overview', { params });
-  return data;
+  return cachedGet('/ranked/overview', params, { ttlMs: 1000 * 60 * 2 });
 }

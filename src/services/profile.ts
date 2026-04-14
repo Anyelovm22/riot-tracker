@@ -1,10 +1,9 @@
-import { api } from './api';
+import { cachedGet } from './api';
 
 export async function fetchProfileSummary(params: {
   gameName: string;
   tagLine: string;
   region: string;
 }) {
-  const { data } = await api.get('/profile/summary', { params });
-  return data;
+  return cachedGet('/profile/summary', params, { ttlMs: 1000 * 60 * 10 });
 }

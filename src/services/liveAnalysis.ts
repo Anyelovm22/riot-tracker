@@ -1,4 +1,4 @@
-import { api } from './api';
+import { cachedGet } from './api';
 
 export type LiveAnalysisMode = 'lane' | 'player' | 'team';
 export type Role = 'TOP' | 'JUNGLE' | 'MIDDLE' | 'BOTTOM' | 'UTILITY';
@@ -167,8 +167,7 @@ export async function fetchLiveAnalysis(params: {
   targetRiotId?: string;
   preferredRole?: Role;
 }) {
-  const { data } = await api.get<LiveAnalysisResponse>('/live/analysis', {
-    params,
+  return cachedGet<LiveAnalysisResponse>('/live/analysis', params, {
+    ttlMs: 1000 * 8,
   });
-  return data;
 }

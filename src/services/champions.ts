@@ -1,11 +1,9 @@
-import { api } from './api';
+import { cachedGet } from './api';
 
 export async function fetchChampions() {
-  const { data } = await api.get('/champions');
-  return data;
+  return cachedGet('/champions', undefined, { ttlMs: 1000 * 60 * 60 * 6 });
 }
 
 export async function fetchChampion(slug: string) {
-  const { data } = await api.get(`/champions/${slug}`);
-  return data;
+  return cachedGet(`/champions/${slug}`, undefined, { ttlMs: 1000 * 60 * 60 });
 }

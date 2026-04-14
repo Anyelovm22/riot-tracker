@@ -17,8 +17,16 @@ const championInsightsInFlight = new Map<string, Promise<any>>();
 const INSIGHTS_CACHE_TTL_MS = 1000 * 60 * 4;
 const MATCH_FETCH_CONCURRENCY = 6;
 
+function normalizeCacheToken(value: string) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toLowerCase();
+}
+
 function getInsightCacheKey(champion: string, platform: string, versusChampion: string) {
-  return `${platform}:${champion.toLowerCase()}:${versusChampion.toLowerCase()}`;
+  return `${platform}:${normalizeCacheToken(champion)}:${normalizeCacheToken(versusChampion)}`;
 }
 
 function getCachedInsight(cacheKey: string) {

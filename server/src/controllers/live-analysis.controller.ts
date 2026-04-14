@@ -790,6 +790,16 @@ function detectEnemySignals(player: LivePlayer): EnemySignal[] {
   return signals;
 }
 
+const cache = new Map<string, any>();
+
+export async function pushLiveSnapshot(req: Request, res: Response) {
+  const { key, snapshot } = req.body;
+  if (!key || !snapshot) return res.status(400).json({ message: 'Faltan datos' });
+  
+  cache.set(key, { snapshot, updatedAt: Date.now() });
+  return res.json({ ok: true });
+}
+
 function buildStats(player: LivePlayer): MatchupStats {
   const kills = safeNumber(player.scores?.kills, 0);
   const deaths = safeNumber(player.scores?.deaths, 0);

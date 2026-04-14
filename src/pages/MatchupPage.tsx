@@ -102,7 +102,7 @@ export default function MatchupPage() {
     if (!cached) {
       loadMatches(false);
     }
-  }, [ddragonVersion]);
+  }, []);
   
   const filteredMatches = useMemo(() => {
     if (filter === 'ALL') return matches;
@@ -208,6 +208,8 @@ export default function MatchupPage() {
                             <img
                               src={player.championIcon || getChampionIconUrl(ddragonVersion, player?.championName)}
                               alt={player.championName}
+                              loading="lazy"
+                              decoding="async"
                               className="h-16 w-16 rounded-2xl border border-zinc-700 object-cover"
                             />
                           ) : (
@@ -248,6 +250,8 @@ export default function MatchupPage() {
                                   key={`${match.matchId}-${idx}`}
                                   src={item.icon || getItemIconUrl(ddragonVersion, item?.id)}
                                   alt={`Item ${item.id}`}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="h-10 w-10 rounded-lg border border-zinc-700 bg-zinc-900"
                                 />
                               ) : (

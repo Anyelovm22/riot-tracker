@@ -50,6 +50,7 @@ export type ChampionAnalyticsPayload = {
   appliedFallback?: boolean;
   fallbackReason?: string;
   availableRoles: Array<{ role: string; games: number; winRate: number }>;
+  availablePatches: Array<{ patch: string; games: number }>;
   overview: {
     primaryBuild: { games: number; winRate: number; items: Array<{ itemId: number; name: string }>; coreItems: Array<{ itemId: number; name: string }> } | null;
     starterItems: ItemAgg[];
@@ -81,9 +82,9 @@ export type ChampionAnalyticsPayload = {
   cacheMeta: { generatedAt: string };
 };
 
-const MATCH_IDS_PER_PLAYER = 15;
-const TOP_PLAYERS_LIMIT = 40;
-const TARGET_MATCHES = 120;
+const MATCH_IDS_PER_PLAYER = 20;
+const TOP_PLAYERS_LIMIT = 80;
+const TARGET_MATCHES = 280;
 const FETCH_BATCH_SIZE = 15;
 const MIN_SAMPLE_SIZE = 8;
 
@@ -170,19 +171,24 @@ async function getMatch(matchId: string, platform: string) {
 
 async function getElitePool(platform: string, rank: string) {
   const normalizedRank = String(rank || 'ALL').toUpperCase();
-  const plan =
+  const rankPlan =
     normalizedRank === 'ALL'
       ? [
           ['CHALLENGER', [1]],
           ['GRANDMASTER', [1, 2]],
           ['MASTER', [1, 2]],
+          ['DIAMOND', [1, 2]],
+          ['EMERALD', [1]],
         ]
       : [[normalizedRank, [1, 2]]];
+  const queuePlan = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR'] as const;
 
   const requests: Array<Promise<any[]>> = [];
-  for (const [tier, pages] of plan as Array<[string, number[]]>) {
-    for (const page of pages) {
-      requests.push(getEliteLeagueEntries(platform, 'RANKED_SOLO_5x5', tier, 'I', page).catch(() => []));
+  for (const queue of queuePlan) {
+    for (const [tier, pages] of rankPlan as Array<[string, number[]]>) {
+      for (const page of pages) {
+        requests.push(getEliteLeagueEntries(platform, queue, tier, 'I', page).catch(() => []));
+      }
     }
   }
 
@@ -199,7 +205,8 @@ async function getElitePool(platform: string, rank: string) {
 }
 
 function extractParticipantMatch(match: any, entryPuuid: string, championName: string): MatchRow | null {
-  if (Number(match?.info?.queueId) !== 420) return null;
+  const queueId = Number(match?.info?.queueId);
+  if (queueId !== 420 && queueId !== 440) return null;
   const participants = match?.info?.participants || [];
   const participant = participants.find((p: any) => p.puuid === entryPuuid && normalizeToken(p.championName) === normalizeToken(championName));
   if (!participant) return null;
@@ -210,7 +217,7 @@ function extractParticipantMatch(match: any, entryPuuid: string, championName: s
   return {
     matchId: match?.metadata?.matchId || '',
     gameCreation: Number(match?.info?.gameCreation || 0),
-    queueId: Number(match?.info?.queueId || 0),
+    queueId,
     patch: normalizePatch(match?.info?.gameVersion),
     role: String(participant?.individualPosition || 'UNKNOWN').toUpperCase(),
     win: Boolean(participant?.win),
@@ -382,6 +389,13 @@ function buildPayload(filters: ChampionAnalyticsFilters, matches: MatchRow[], el
   const roleRows = [...roles.entries()]
     .map(([role, stats]) => ({ role, games: stats.total, winRate: pct(stats.wins, stats.total) }))
     .sort((a, b) => b.games - a.games);
+  const patchRows = new Map<string, number>();
+  for (const row of matches) {
+    patchRows.set(row.patch, (patchRows.get(row.patch) || 0) + 1);
+  }
+  const availablePatches = [...patchRows.entries()]
+    .map(([patch, games]) => ({ patch, games }))
+    .sort((a, b) => b.patch.localeCompare(a.patch));
 
   const topRunes = [...runes.values()]
     .sort((a, b) => b.total - a.total)
@@ -437,6 +451,7 @@ function buildPayload(filters: ChampionAnalyticsFilters, matches: MatchRow[], el
     appliedFallback: Boolean(fallbackReason),
     fallbackReason,
     availableRoles: roleRows,
+    availablePatches,
     overview: {
       primaryBuild: primaryBuild ? { games: primaryBuild.games, winRate: primaryBuild.winRate, items: primaryBuild.items, coreItems: primaryBuild.items.slice(1, 4) } : null,
       starterItems: slotStats.starter,
@@ -530,7 +545,7 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
   }
 
   if (!collected.length) {
-    return buildPayload({ ...filters, champion: championName, role: normalizedRole, rank: normalizedRank }, [], 0, items, 'No hay suficientes partidas ranked para los filtros seleccionados.');
+    return buildPayload({ ...filters, champion: championName, role: normalizedRole, rank: normalizedRank }, [], 0, items, 'No hay suficientes partidas para los filtros seleccionados.');
   }
 
   const sortedMatches = [...collected].sort((a, b) => b.gameCreation - a.gameCreation);
@@ -640,6 +655,7 @@ export function toChampionSummary(payload: ChampionAnalyticsPayload) {
     appliedFallback: payload.appliedFallback,
     fallbackReason: payload.fallbackReason,
     availableRoles: payload.availableRoles,
+    availablePatches: payload.availablePatches,
     overview: payload.overview,
     builds: payload.builds,
     itemStats: payload.itemStats,

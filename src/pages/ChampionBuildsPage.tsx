@@ -20,7 +20,7 @@ export default function ChampionBuildsPage() {
   const [selectedRole, setSelectedRole] = useState('MIDDLE');
   const [selectedPlatform, setSelectedPlatform] = useState('la1');
   const [selectedRank, setSelectedRank] = useState('ALL');
-  const [selectedPatch, setSelectedPatch] = useState('latest');
+  const [selectedPatch, setSelectedPatch] = useState('all');
   const requestIdRef = useRef(0);
   const initialLoadKeyRef = useRef('');
 
@@ -114,6 +114,10 @@ export default function ChampionBuildsPage() {
   }, [championOptions, versusInput]);
 
   const data = detailsData || summaryData;
+  const patchOptions = useMemo(() => {
+    const fromApi = Array.isArray(data?.availablePatches) ? data.availablePatches.map((row: any) => row.patch).filter(Boolean) : [];
+    return ['all', 'latest', ...fromApi.filter((patch: string) => patch !== 'all' && patch !== 'latest')];
+  }, [data?.availablePatches]);
   const maxRoleGames = Math.max(1, ...(data?.charts?.roleDistribution?.values || [0]));
   const maxMatchupGames = Math.max(1, ...((detailsData?.secondary?.matchups || []).map((row: any) => row.games || 0)));
   const renderItems = (items: Array<{ itemId: number; name: string }> = [], keyPrefix = 'item') => (
@@ -168,7 +172,13 @@ export default function ChampionBuildsPage() {
             </div>
             <div>
               <label className="text-xs text-[var(--text-muted)]">Patch</label>
-              <input value={selectedPatch} onChange={(e) => setSelectedPatch(e.target.value || 'latest')} placeholder="latest o 16.7" className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]" />
+              <select value={selectedPatch} onChange={(e) => setSelectedPatch(e.target.value || 'all')} className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]">
+                {patchOptions.map((patch) => (
+                  <option key={patch} value={patch}>
+                    {patch === 'all' ? 'Todos los parches' : patch === 'latest' ? 'Último parche' : patch}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">

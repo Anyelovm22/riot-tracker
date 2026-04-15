@@ -1026,6 +1026,82 @@ async function getMatchWithRetry(matchId: string, platform: string, retries = 3)
   throw new Error('Retry attempts exhausted');
 }
 
+async function fetchRecentRankedRowsFromRiot(
+  puuid: string,
+  platform: string,
+  queue: QueueMode,
+  maxMatches = 40
+): Promise<MatchLike[]> {
+  const queueFilter =
+    queue === 'solo'
+      ? new Set([queueMap.solo])
+      : queue === 'flex'
+      ? new Set([queueMap.flex])
+      : new Set(RANKED_QUEUE_IDS);
+
+  const ids = await getMatchIdsByPuuid(
+    puuid,
+    platform,
+    Math.max(1, Math.min(100, maxMatches)),
+    0,
+    undefined,
+    undefined,
+    undefined,
+    'ranked'
+  ).catch(() => []);
+
+  if (!ids.length) return [];
+
+  const rows: MatchLike[] = [];
+  const chunkSize = 5;
+
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const results = await Promise.allSettled(chunk.map((id: string) => getMatchById(id, platform)));
+
+    for (let idx = 0; idx < results.length; idx += 1) {
+      const result = results[idx];
+      if (result.status !== 'fulfilled') continue;
+
+      const match = result.value;
+      const queueId = Number(match?.info?.queueId || 0);
+      if (!queueFilter.has(queueId)) continue;
+
+      const gameDuration = Number(match?.info?.gameDuration || 0);
+      if (gameDuration < MIN_VALID_GAME_DURATION_SECONDS) continue;
+
+      const participant = match?.info?.participants?.find((p: any) => p?.puuid === puuid);
+      if (!participant) continue;
+
+      rows.push({
+        puuid,
+        platform,
+        matchId: String(match?.metadata?.matchId || chunk[idx]),
+        queueId,
+        gameCreation: BigInt(Number(match?.info?.gameCreation || 0)),
+        gameDuration,
+        championName: String(participant?.championName || ''),
+        kills: Number(participant?.kills || 0),
+        deaths: Number(participant?.deaths || 0),
+        assists: Number(participant?.assists || 0),
+        win: Boolean(participant?.win),
+        totalMinionsKilled: Number(participant?.totalMinionsKilled || 0),
+        neutralMinionsKilled: Number(participant?.neutralMinionsKilled || 0),
+        totalDamageDealtToChampions: Number(participant?.totalDamageDealtToChampions || 0),
+        totalDamageTaken: Number(participant?.totalDamageTaken || 0),
+        visionScore: Number(participant?.visionScore || 0),
+        timeCCingOthers: Number(participant?.timeCCingOthers || 0),
+        damageDealtToObjectives: Number(participant?.damageDealtToObjectives || 0),
+        turretTakedowns: Number(participant?.turretTakedowns || 0),
+        goldEarned: Number(participant?.goldEarned || 0),
+        individualPosition: participant?.individualPosition || null,
+      });
+    }
+  }
+
+  return rows.sort((a, b) => Number(a.gameCreation) - Number(b.gameCreation));
+}
+
 export async function syncAnalyticsMatches(req: Request, res: Response) {
   const puuid = String(req.body.puuid || '').trim();
   const platform = String(req.body.platform || 'la1').trim().toLowerCase();
@@ -1270,23 +1346,38 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
     });
 
     const seenMatchIds = new Set<string>();
-    const rows = rowsRaw.filter((row) => {
+    let rows = rowsRaw.filter((row) => {
       if (seenMatchIds.has(row.matchId)) return false;
       seenMatchIds.add(row.matchId);
       return true;
     });
 
-    await saveRankSnapshots(puuid, platform);
+    if (rows.length < 12) {
+      const quickRows = await fetchRecentRankedRowsFromRiot(puuid, platform, queue, 50);
+      if (quickRows.length) {
+        const cacheRows = rows as MatchLike[];
+        const mergedByMatch = new Map<string, MatchLike>();
+        [...cacheRows, ...quickRows].forEach((row) => {
+          mergedByMatch.set(row.matchId, row as MatchLike);
+        });
+        rows = [...mergedByMatch.values()].sort(
+          (a: any, b: any) => Number(a.gameCreation) - Number(b.gameCreation)
+        );
+      }
+    }
+
+    saveRankSnapshots(puuid, platform).catch(() => null);
 
     const summoner = await getSummonerByPuuid(puuid, platform).catch(() => null);
     let leagueEntries: any[] = [];
     if (summoner?.id) {
       leagueEntries = await getLeagueEntriesBySummonerId(summoner.id, platform).catch(() => []);
-      if (!leagueEntries.length) {
-        leagueEntries = await getLeagueEntriesByPuuid(summoner.puuid || puuid, platform).catch(
-          () => []
-        );
-      }
+    }
+
+    if (!leagueEntries.length) {
+      leagueEntries = await getLeagueEntriesByPuuid(summoner?.puuid || puuid, platform).catch(
+        () => []
+      );
     }
 
     const normalizedEntries = normalizeLeagueEntries(leagueEntries);
@@ -1378,6 +1469,55 @@ export async function getLpHistory(req: Request, res: Response) {
         snapshotAt: 'asc',
       },
     });
+
+    if (!snapshots.length) {
+      const summoner = await getSummonerByPuuid(puuid, platform).catch(() => null);
+      let leagueEntries: any[] = [];
+      if (summoner?.id) {
+        leagueEntries = await getLeagueEntriesBySummonerId(summoner.id, platform).catch(() => []);
+      }
+      if (!leagueEntries.length) {
+        leagueEntries = await getLeagueEntriesByPuuid(summoner?.puuid || puuid, platform).catch(
+          () => []
+        );
+      }
+
+      const entry = leagueEntries.find((item: any) => item?.queueType === queueType);
+      if (entry) {
+        const now = new Date().toISOString();
+        const currentPoint = {
+          label: new Date(now).toLocaleString(),
+          snapshotAt: now,
+          tier: entry.tier,
+          rank: entry.rank,
+          leaguePoints: Number(entry.leaguePoints || 0),
+          wins: Number(entry.wins || 0),
+          losses: Number(entry.losses || 0),
+          lpChange: 0,
+          lpGain: 0,
+          lpLoss: 0,
+          winsDelta: 0,
+          lossesDelta: 0,
+          matchesDelta: 0,
+          rankValue: rankToNumber(entry.tier, entry.rank, Number(entry.leaguePoints || 0)),
+          queueType,
+        };
+
+        return res.json({
+          success: true,
+          queueType,
+          totalSnapshots: 1,
+          points: [currentPoint],
+          totals: {
+            lpGained: 0,
+            lpLost: 0,
+            netLp: 0,
+            winsDetected: 0,
+            lossesDetected: 0,
+          },
+        });
+      }
+    }
 
     const points = snapshots.map((item, index) => {
       const previous = index > 0 ? snapshots[index - 1] : null;

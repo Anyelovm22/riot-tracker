@@ -18,9 +18,10 @@ export default function ChampionBuildsPage() {
   const [error, setError] = useState('');
   const [versusInput, setVersusInput] = useState('');
   const [selectedRole, setSelectedRole] = useState('MIDDLE');
-  const [selectedPlatform, setSelectedPlatform] = useState('la1');
+  const [selectedPlatform, setSelectedPlatform] = useState('global');
+  const [selectedQueue, setSelectedQueue] = useState<'solo' | 'flex'>('solo');
   const [selectedRank, setSelectedRank] = useState('ALL');
-  const [selectedPatch, setSelectedPatch] = useState('latest');
+  const [selectedPatch, setSelectedPatch] = useState('all');
   const requestIdRef = useRef(0);
   const initialLoadKeyRef = useRef('');
 
@@ -68,6 +69,7 @@ export default function ChampionBuildsPage() {
     const sharedParams = {
       champion: decodedChampion,
       platform: selectedPlatform,
+      queue: selectedQueue,
       versusChampion: selectedVersus || undefined,
       role: selectedRole,
       rank: selectedRank,
@@ -98,12 +100,12 @@ export default function ChampionBuildsPage() {
 
   useEffect(() => {
     if (!decodedChampion) return;
-    const initialLoadKey = `${decodedChampion}:${selectedPlatform}:${selectedRole}:${selectedRank}:${selectedPatch}`;
+    const initialLoadKey = `${decodedChampion}:${selectedPlatform}:${selectedQueue}:${selectedRole}:${selectedRank}:${selectedPatch}`;
     if (initialLoadKeyRef.current === initialLoadKey) return;
     initialLoadKeyRef.current = initialLoadKey;
     setVersusInput('');
     loadInsights('');
-  }, [decodedChampion, selectedPlatform, selectedRole, selectedRank, selectedPatch]);
+  }, [decodedChampion, selectedPlatform, selectedQueue, selectedRole, selectedRank, selectedPatch]);
 
   const championOptions = useMemo(() => champions.map((champ: any) => champ.name), [champions]);
   const filteredChampionOptions = useMemo(() => {
@@ -114,6 +116,10 @@ export default function ChampionBuildsPage() {
   }, [championOptions, versusInput]);
 
   const data = detailsData || summaryData;
+  const patchOptions = useMemo(() => {
+    const fromApi = Array.isArray(data?.availablePatches) ? data.availablePatches.map((row: any) => row.patch).filter(Boolean) : [];
+    return ['all', 'latest', ...fromApi.filter((patch: string) => patch !== 'all' && patch !== 'latest')];
+  }, [data?.availablePatches]);
   const maxRoleGames = Math.max(1, ...(data?.charts?.roleDistribution?.values || [0]));
   const maxMatchupGames = Math.max(1, ...((detailsData?.secondary?.matchups || []).map((row: any) => row.games || 0)));
   const renderItems = (items: Array<{ itemId: number; name: string }> = [], keyPrefix = 'item') => (
@@ -132,7 +138,7 @@ export default function ChampionBuildsPage() {
         <section className="rounded-3xl border border-[var(--border-default)] bg-[linear-gradient(110deg,rgba(16,185,129,0.14),rgba(9,9,11,0.92)_35%,rgba(59,130,246,0.2))] p-6">
           <h1 className="text-3xl font-bold text-[var(--text-primary)]">{decodedChampion} · Pro Build Lab</h1>
           <p className="mt-2 text-sm text-[var(--text-secondary)]">Build principal, runas y métricas agregadas de alto elo por parche.</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div>
               <label className="text-xs text-[var(--text-muted)]">Rol</label>
               <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]">
@@ -145,8 +151,16 @@ export default function ChampionBuildsPage() {
               </select>
             </div>
             <div>
+              <label className="text-xs text-[var(--text-muted)]">Cola</label>
+              <select value={selectedQueue} onChange={(e) => setSelectedQueue(e.target.value === 'flex' ? 'flex' : 'solo')} className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]">
+                <option value="solo">SoloQ</option>
+                <option value="flex">Flex</option>
+              </select>
+            </div>
+            <div>
               <label className="text-xs text-[var(--text-muted)]">Región</label>
               <select value={selectedPlatform} onChange={(e) => setSelectedPlatform(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]">
+                <option value="global">Todas las regiones</option>
                 <option value="la1">LAN</option>
                 <option value="la2">LAS</option>
                 <option value="na1">NA</option>
@@ -168,7 +182,13 @@ export default function ChampionBuildsPage() {
             </div>
             <div>
               <label className="text-xs text-[var(--text-muted)]">Patch</label>
-              <input value={selectedPatch} onChange={(e) => setSelectedPatch(e.target.value || 'latest')} placeholder="latest o 16.7" className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]" />
+              <select value={selectedPatch} onChange={(e) => setSelectedPatch(e.target.value || 'all')} className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)]">
+                {patchOptions.map((patch) => (
+                  <option key={patch} value={patch}>
+                    {patch === 'all' ? 'Todos los parches' : patch === 'latest' ? 'Último parche' : patch}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">

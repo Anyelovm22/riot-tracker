@@ -215,33 +215,7 @@ export default function HomePage() {
         </div>
 
         <div className="surface-card p-6">
-          <h2 className="text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Extraccion completa</h2>
-          <div className="mt-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-[var(--text-muted)]">Estado de modulos</p>
-            <p className="mt-1 text-lg font-semibold">
-              {overview ? `${overview.modulesReady}/${overview.modulesTotal} activos` : 'Esperando busqueda'}
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
-                <p className="text-[var(--text-muted)]">Partidas</p>
-                <p className="font-semibold">{overview ? overview.totalMatches : '--'}</p>
-              </div>
-              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
-                <p className="text-[var(--text-muted)]">Winrate</p>
-                <p className="font-semibold">{overview ? `${overview.winRate.toFixed(1)}%` : '--'}</p>
-              </div>
-              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
-                <p className="text-[var(--text-muted)]">KDA</p>
-                <p className="font-semibold">{overview ? overview.avgKda.toFixed(2) : '--'}</p>
-              </div>
-              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
-                <p className="text-[var(--text-muted)]">Main pick</p>
-                <p className="truncate font-semibold">{overview ? overview.topChampion : '--'}</p>
-              </div>
-            </div>
-          </div>
-
-          <h3 className="mt-5 text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Acciones rapidas</h3>
+          <h2 className="text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Acciones rapidas</h2>
           <div className="mt-4 grid gap-3">
             {navCards.slice(0, 4).map((card) => (
               <button

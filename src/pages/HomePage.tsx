@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchPlayerHubData } from '../services/playerHub';
-import { readStoredProfile } from '../utils/profileStorage';
-import { captureDisplayScreenshot } from '../utils/screenshot';
+import { usePlayerHub } from '../hooks/usePlayerHub';
+import { captureAppSnapshot, captureDisplayScreenshot } from '../utils/screenshot';
 
 function parseRiotId(input: string) {
   const parts = input.trim().split('#');
@@ -81,15 +80,14 @@ export default function HomePage() {
   const [searchValue, setSearchValue] = useState('');
   const [region, setRegion] = useState('la2');
   const [inputError, setInputError] = useState('');
-  const [summary, setSummary] = useState<any>(() => readStoredProfile());
-  const [overview, setOverview] = useState<{
-    totalMatches: number;
-    winRate: number;
-    avgKda: number;
-    topChampion: string;
-    modulesReady: number;
-    modulesTotal: number;
-  } | null>(null);
+  const {
+    loading,
+    error,
+    warnings,
+    profile: summary,
+    runSearch,
+    reset,
+  } = usePlayerHub();
 
   const navigate = useNavigate();
 
@@ -97,32 +95,30 @@ export default function HomePage() {
     try {
       setInputError('');
       const { gameName, tagLine } = parseRiotId(searchValue);
-      const hubData = await fetchPlayerHubData({ gameName, tagLine, region });
-      const profile = hubData.profile;
-
-      setSummary(profile);
-      setOverview(hubData.overview);
-
-      saveCache('profile', profile);
-      localStorage.setItem('riot-profile-summary', JSON.stringify(profile));
-
-      if (hubData.modules.live) saveCache('live', hubData.modules.live);
-      if (hubData.modules.matches) saveCache('matches', hubData.modules.matches);
-      if (hubData.modules.ranked) saveCache('rankedOverview', hubData.modules.ranked);
-    } catch (err: any) {
-      setError(getApiErrorMessage(err, 'No se pudo cargar el perfil'));
-      setSummary(null);
-      setOverview(null);
-    } finally {
-      setLoading(false);
+      await runSearch({ gameName, tagLine, region });
+    } catch (err) {
+      setInputError(err instanceof Error ? err.message : 'Riot ID invalido');
     }
   }
 
   function handleReset() {
     reset();
-    setSummary(null);
-    setOverview(null);
     setSearchValue('');
+    setInputError('');
+  }
+
+  async function handleScreenshot() {
+    try {
+      await captureAppSnapshot();
+    } catch (err) {
+      try {
+        await captureDisplayScreenshot();
+      } catch (fallbackErr) {
+        setInputError(
+          fallbackErr instanceof Error ? fallbackErr.message : 'No se pudo tomar screenshot'
+        );
+      }
+    }
   }
 
   return (

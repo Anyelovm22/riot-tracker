@@ -15,6 +15,7 @@ export default function ChampionBuildsPage() {
   const [ddragonVersion, setDdragonVersion] = useState('');
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
   const [error, setError] = useState('');
   const [versusInput, setVersusInput] = useState('');
   const [selectedRole, setSelectedRole] = useState('MIDDLE');
@@ -35,30 +36,23 @@ export default function ChampionBuildsPage() {
   }, []);
 
   const loadDetailsDeferred = (params: any, requestId: number) => {
-    const run = () => {
-      setLoadingDetails(true);
-      fetchChampionBuildInsights(params)
-        .then((result) => {
-          if (requestIdRef.current !== requestId) return;
-          setDetailsData(result);
-        })
-        .catch(() => {
-          if (requestIdRef.current !== requestId) return;
-          setDetailsData(null);
-        })
-        .finally(() => {
-          if (requestIdRef.current === requestId) {
-            setLoadingDetails(false);
-          }
-        });
-    };
-
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      (window as any).requestIdleCallback(run, { timeout: 900 });
-      return;
-    }
-
-    setTimeout(run, 80);
+    setLoadingDetails(true);
+    setDetailsError('');
+    fetchChampionBuildInsights(params)
+      .then((result) => {
+        if (requestIdRef.current !== requestId) return;
+        setDetailsData(result);
+      })
+      .catch((err: any) => {
+        if (requestIdRef.current !== requestId) return;
+        setDetailsData(null);
+        setDetailsError(err?.response?.data?.message || 'No se pudieron cargar detalles avanzados de builds.');
+      })
+      .finally(() => {
+        if (requestIdRef.current === requestId) {
+          setLoadingDetails(false);
+        }
+      });
   };
 
   async function loadInsights(nextVersus?: string) {
@@ -80,6 +74,7 @@ export default function ChampionBuildsPage() {
       setLoadingSummary(true);
       setLoadingDetails(false);
       setError('');
+      setDetailsError('');
       setDetailsData(null);
 
       const summaryResult = await fetchChampionBuildSummary(sharedParams);
@@ -225,6 +220,7 @@ export default function ChampionBuildsPage() {
         ) : null}
 
         {error ? <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-red-200">{error}</div> : null}
+        {detailsError ? <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">{detailsError}</div> : null}
 
         {!loadingSummary && !error && data ? (
           <>

@@ -6,6 +6,7 @@ export type ChampionAnalyticsFilters = {
   role: string;
   rank: string;
   patch: string;
+  queue?: 'solo' | 'flex';
   versusChampion?: string;
 };
 
@@ -50,6 +51,7 @@ export type ChampionAnalyticsPayload = {
   appliedFallback?: boolean;
   fallbackReason?: string;
   availableRoles: Array<{ role: string; games: number; winRate: number }>;
+  availablePatches: Array<{ patch: string; games: number }>;
   overview: {
     primaryBuild: { games: number; winRate: number; items: Array<{ itemId: number; name: string }>; coreItems: Array<{ itemId: number; name: string }> } | null;
     starterItems: ItemAgg[];
@@ -81,11 +83,12 @@ export type ChampionAnalyticsPayload = {
   cacheMeta: { generatedAt: string };
 };
 
-const MATCH_IDS_PER_PLAYER = 15;
-const TOP_PLAYERS_LIMIT = 40;
-const TARGET_MATCHES = 120;
+const MATCH_IDS_PER_PLAYER = 20;
+const TOP_PLAYERS_LIMIT = 80;
+const TARGET_MATCHES = 280;
 const FETCH_BATCH_SIZE = 15;
 const MIN_SAMPLE_SIZE = 8;
+const DEFAULT_ANALYTICS_PLATFORMS = ['la1', 'la2', 'na1', 'euw1', 'eun1', 'kr', 'jp1', 'br1'];
 
 const ttl = {
   analytics: 1000 * 60 * 30,
@@ -168,21 +171,26 @@ async function getMatch(matchId: string, platform: string) {
   return data;
 }
 
-async function getElitePool(platform: string, rank: string) {
+async function getElitePool(platform: string, rank: string, limit = TOP_PLAYERS_LIMIT) {
   const normalizedRank = String(rank || 'ALL').toUpperCase();
-  const plan =
+  const rankPlan =
     normalizedRank === 'ALL'
       ? [
           ['CHALLENGER', [1]],
           ['GRANDMASTER', [1, 2]],
           ['MASTER', [1, 2]],
+          ['DIAMOND', [1, 2]],
+          ['EMERALD', [1]],
         ]
       : [[normalizedRank, [1, 2]]];
+  const queuePlan = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR'] as const;
 
   const requests: Array<Promise<any[]>> = [];
-  for (const [tier, pages] of plan as Array<[string, number[]]>) {
-    for (const page of pages) {
-      requests.push(getEliteLeagueEntries(platform, 'RANKED_SOLO_5x5', tier, 'I', page).catch(() => []));
+  for (const queue of queuePlan) {
+    for (const [tier, pages] of rankPlan as Array<[string, number[]]>) {
+      for (const page of pages) {
+        requests.push(getEliteLeagueEntries(platform, queue, tier, 'I', page).catch(() => []));
+      }
     }
   }
 
@@ -195,11 +203,12 @@ async function getElitePool(platform: string, rank: string) {
     if (!prev || Number(entry?.leaguePoints || 0) > Number(prev?.leaguePoints || 0)) byPlayer.set(key, entry);
   }
 
-  return [...byPlayer.values()].sort((a, b) => Number(b?.leaguePoints || 0) - Number(a?.leaguePoints || 0)).slice(0, TOP_PLAYERS_LIMIT);
+  return [...byPlayer.values()].sort((a, b) => Number(b?.leaguePoints || 0) - Number(a?.leaguePoints || 0)).slice(0, limit);
 }
 
 function extractParticipantMatch(match: any, entryPuuid: string, championName: string): MatchRow | null {
-  if (Number(match?.info?.queueId) !== 420) return null;
+  const queueId = Number(match?.info?.queueId);
+  if (queueId !== 420 && queueId !== 440) return null;
   const participants = match?.info?.participants || [];
   const participant = participants.find((p: any) => p.puuid === entryPuuid && normalizeToken(p.championName) === normalizeToken(championName));
   if (!participant) return null;
@@ -210,7 +219,7 @@ function extractParticipantMatch(match: any, entryPuuid: string, championName: s
   return {
     matchId: match?.metadata?.matchId || '',
     gameCreation: Number(match?.info?.gameCreation || 0),
-    queueId: Number(match?.info?.queueId || 0),
+    queueId,
     patch: normalizePatch(match?.info?.gameVersion),
     role: String(participant?.individualPosition || 'UNKNOWN').toUpperCase(),
     win: Boolean(participant?.win),
@@ -382,6 +391,13 @@ function buildPayload(filters: ChampionAnalyticsFilters, matches: MatchRow[], el
   const roleRows = [...roles.entries()]
     .map(([role, stats]) => ({ role, games: stats.total, winRate: pct(stats.wins, stats.total) }))
     .sort((a, b) => b.games - a.games);
+  const patchRows = new Map<string, number>();
+  for (const row of matches) {
+    patchRows.set(row.patch, (patchRows.get(row.patch) || 0) + 1);
+  }
+  const availablePatches = [...patchRows.entries()]
+    .map(([patch, games]) => ({ patch, games }))
+    .sort((a, b) => b.patch.localeCompare(a.patch));
 
   const topRunes = [...runes.values()]
     .sort((a, b) => b.total - a.total)
@@ -437,6 +453,7 @@ function buildPayload(filters: ChampionAnalyticsFilters, matches: MatchRow[], el
     appliedFallback: Boolean(fallbackReason),
     fallbackReason,
     availableRoles: roleRows,
+    availablePatches,
     overview: {
       primaryBuild: primaryBuild ? { games: primaryBuild.games, winRate: primaryBuild.winRate, items: primaryBuild.items, coreItems: primaryBuild.items.slice(1, 4) } : null,
       starterItems: slotStats.starter,
@@ -483,29 +500,40 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
   const normalizedRole = String(filters.role || 'ALL').toUpperCase();
   const normalizedRank = String(filters.rank || 'ALL').toUpperCase();
   const normalizedPatch = String(filters.patch || 'latest').toLowerCase();
+  const normalizedQueue = String(filters.queue || 'solo').toLowerCase() === 'flex' ? 'flex' : 'solo';
   const normalizedVersus = String(filters.versusChampion || '').trim();
+  const platformInput = String(filters.platform || 'la1').toLowerCase();
+  const platforms = platformInput === 'global' ? DEFAULT_ANALYTICS_PLATFORMS : [platformInput];
+  const perPlatformLimit = platformInput === 'global' ? 20 : TOP_PLAYERS_LIMIT;
 
   const { champions, items } = await getStaticData();
   const championName = champions.find((c: any) => normalizeToken(c?.name) === normalizeToken(filters.champion))?.name;
   if (!championName) throw new Error(`Champion ${filters.champion} not found`);
 
-  const players = await getElitePool(filters.platform, normalizedRank);
-  const matchCandidates: Array<{ puuid: string; matchId: string }> = [];
+  const pools = await Promise.all(
+    platforms.map(async (platform) => {
+      const players = await getElitePool(platform, normalizedRank, perPlatformLimit);
+      return players.map((player) => ({ platform, player }));
+    })
+  );
+  const poolEntries = pools.flat();
+  const matchCandidates: Array<{ puuid: string; matchId: string; platform: string }> = [];
   const seen = new Set<string>();
 
-  const playersResolved = await Promise.all(players.map(async (entry) => {
-    const puuid = await getPlayerPuuid(entry, filters.platform);
+  const playersResolved = await Promise.all(poolEntries.map(async ({ platform, player }) => {
+    const puuid = await getPlayerPuuid(player, platform);
     if (!puuid) return null;
-    const ids = await getPlayerMatchIds(puuid, filters.platform);
-    return { puuid, ids };
+    const ids = await getPlayerMatchIds(puuid, platform);
+    return { puuid, ids, platform };
   }));
 
   for (const row of playersResolved) {
     if (!row) continue;
     for (const matchId of row.ids) {
-      if (seen.has(matchId)) continue;
-      seen.add(matchId);
-      matchCandidates.push({ puuid: row.puuid, matchId });
+      const dedupeKey = `${row.platform}:${matchId}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      matchCandidates.push({ puuid: row.puuid, matchId, platform: row.platform });
     }
   }
 
@@ -513,8 +541,8 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
   for (let i = 0; i < matchCandidates.length && collected.length < TARGET_MATCHES; i += FETCH_BATCH_SIZE) {
     const batch = matchCandidates.slice(i, i + FETCH_BATCH_SIZE);
     const batchRows = await Promise.all(
-      batch.map(async ({ puuid, matchId }) => {
-        const match = await getMatch(matchId, filters.platform);
+      batch.map(async ({ puuid, matchId, platform }) => {
+        const match = await getMatch(matchId, platform);
         if (!match) return null;
         const row = extractParticipantMatch(match, puuid, championName);
         if (!row) return null;
@@ -530,21 +558,32 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
   }
 
   if (!collected.length) {
-    return buildPayload({ ...filters, champion: championName, role: normalizedRole, rank: normalizedRank }, [], 0, items, 'No hay suficientes partidas ranked para los filtros seleccionados.');
+    return buildPayload({ ...filters, champion: championName, role: normalizedRole, rank: normalizedRank }, [], 0, items, 'No hay suficientes partidas para los filtros seleccionados.');
   }
 
   const sortedMatches = [...collected].sort((a, b) => b.gameCreation - a.gameCreation);
-  const latestPatch = sortedMatches[0]?.patch || 'latest';
+  const queueFiltered = sortedMatches.filter((m) => (normalizedQueue === 'solo' ? m.queueId === 420 : m.queueId === 440));
+  if (!queueFiltered.length) {
+    return buildPayload(
+      { ...filters, champion: championName, platform: platformInput, role: normalizedRole, rank: normalizedRank, queue: normalizedQueue },
+      [],
+      0,
+      items,
+      `No hay suficientes partidas de ${normalizedQueue === 'solo' ? 'SoloQ' : 'Flex'} para los filtros seleccionados.`
+    );
+  }
+  const queueBase = queueFiltered;
+  const latestPatch = queueBase[0]?.patch || 'latest';
   const requestedPatch = normalizePatch(filters.patch);
 
-  const byRole = normalizedRole === 'ALL' ? sortedMatches : sortedMatches.filter((m) => m.role === normalizedRole);
+  const byRole = normalizedRole === 'ALL' ? queueBase : queueBase.filter((m) => m.role === normalizedRole);
   const byRoleAndPatch = byRole.filter((m) => {
     if (normalizedPatch === 'all') return true;
     if (normalizedPatch === 'latest') return m.patch === latestPatch;
     return m.patch === requestedPatch;
   });
   const byRoleAllPatches = byRole;
-  const byAnyRolePatch = sortedMatches.filter((m) => {
+  const byAnyRolePatch = queueBase.filter((m) => {
     if (normalizedPatch === 'all') return true;
     if (normalizedPatch === 'latest') return m.patch === latestPatch;
     return m.patch === requestedPatch;
@@ -568,7 +607,7 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
   }
 
   if (!effective.length) {
-    effective = sortedMatches;
+    effective = queueBase;
     effectiveRole = 'ALL';
     effectivePatch = 'all';
     fallbackReasons.push('No hubo muestra suficiente con filtros exactos; se usó el agregado global del campeón.');
@@ -582,7 +621,7 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
     : fallbackReasons.join(' ') || undefined;
 
   const payload = buildPayload(
-    { ...filters, champion: championName, role: effectiveRole, rank: normalizedRank, patch: effectivePatch, versusChampion: needsFallback ? '' : normalizedVersus },
+    { ...filters, champion: championName, platform: platformInput, role: effectiveRole, rank: normalizedRank, patch: effectivePatch, queue: normalizedQueue, versusChampion: needsFallback ? '' : normalizedVersus },
     needsFallback ? effective : byVersus,
     effective.length,
     items,
@@ -600,6 +639,7 @@ function getAnalyticsCacheKey(filters: ChampionAnalyticsFilters) {
     normalizeToken(filters.role),
     normalizeToken(filters.rank),
     normalizeToken(filters.patch),
+    normalizeToken(filters.queue || 'solo'),
     normalizeToken(filters.versusChampion || ''),
   ].join(':');
 }
@@ -640,6 +680,7 @@ export function toChampionSummary(payload: ChampionAnalyticsPayload) {
     appliedFallback: payload.appliedFallback,
     fallbackReason: payload.fallbackReason,
     availableRoles: payload.availableRoles,
+    availablePatches: payload.availablePatches,
     overview: payload.overview,
     builds: payload.builds,
     itemStats: payload.itemStats,

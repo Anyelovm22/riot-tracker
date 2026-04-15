@@ -2,12 +2,14 @@ import { Request, Response } from 'express';
 import { getChampionAnalytics, toChampionSummary } from '../services/champion-analytics.service';
 
 function parseFilters(req: Request) {
+  const rawQueue = String(req.query.queue || 'solo').trim().toLowerCase();
   return {
     champion: String(req.query.champion || '').trim(),
-    platform: String(req.query.platform || 'la1').trim().toLowerCase(),
+    platform: String(req.query.platform || 'global').trim().toLowerCase(),
     role: String(req.query.role || 'ALL').trim().toUpperCase(),
     rank: String(req.query.rank || 'ALL').trim().toUpperCase(),
     patch: String(req.query.patch || 'latest').trim(),
+    queue: rawQueue === 'flex' ? 'flex' : 'solo',
     versusChampion: String(req.query.versusChampion || '').trim() || undefined,
   };
 }

@@ -3,6 +3,7 @@ import { cachedGet } from './api';
 type BuildInsightsParams = {
   champion: string;
   platform: string;
+  queue?: 'solo' | 'flex';
   versusChampion?: string;
   role?: string;
   rank?: string;
@@ -23,6 +24,7 @@ function getInsightsCacheKey(params: BuildInsightsParams, view: 'summary' | 'det
     params.platform,
     params.champion.toLowerCase(),
     (params.versusChampion || '').toLowerCase(),
+    (params.queue || 'solo').toLowerCase(),
     (params.role || 'ALL').toLowerCase(),
     (params.rank || 'ALL').toLowerCase(),
     (params.patch || 'latest').toLowerCase(),

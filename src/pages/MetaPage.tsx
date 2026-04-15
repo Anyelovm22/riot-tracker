@@ -423,7 +423,7 @@ export default function MetaPage() {
   const seasonOptions = useMemo(() => buildSeasonOptions(today), [today]);
   const defaultSeason = useMemo(() => resolveCurrentSeason(seasonOptions, today), [seasonOptions, today]);
 
-  const [selectedQueue, setSelectedQueue] = useState<QueueMode>('all');
+  const [selectedQueue, setSelectedQueue] = useState<QueueMode>('solo');
   const [lpQueue, setLpQueue] = useState<LpQueueMode>('solo');
   const [selectedView, setSelectedView] = useState<ViewMode>('summary');
   const [selectedSeasonKey, setSelectedSeasonKey] = useState<string>(defaultSeason?.key || '');
@@ -589,7 +589,6 @@ export default function MetaPage() {
   }, [selectedQueue]);
 
   const data = analyticsResponse?.analytics || null;
-  const officialRecord = analyticsResponse?.officialRecord || null;
   const cacheCoverage = analyticsResponse?.cacheCoverage || null;
   const rankedEntries: any[] =
     rankedOverview?.leagueEntries?.length
@@ -603,9 +602,7 @@ export default function MetaPage() {
     () => rankedEntries.find((entry) => entry.queueType === 'RANKED_FLEX_SR') || null,
     [rankedEntries]
   );
-  const bestAvailableRecord = officialRecord || soloRecord || flexRecord;
-  const selectedQueueRecord =
-    selectedQueue === 'solo' ? soloRecord : selectedQueue === 'flex' ? flexRecord : bestAvailableRecord;
+  const selectedQueueRecord = selectedQueue === 'flex' ? flexRecord : soloRecord;
 
   const lpRankedEntry = useMemo(() => {
     const queueType = lpQueue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
@@ -704,9 +701,7 @@ export default function MetaPage() {
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-5">
                 <div className="text-xs font-medium text-[var(--text-muted)]">
-                  {selectedQueue === 'all'
-                    ? 'Rango oficial actual'
-                    : `Rango oficial (${selectedQueue === 'solo' ? 'SoloQ' : 'Flex'})`}
+                  {`Rango oficial (${selectedQueue === 'solo' ? 'SoloQ' : 'Flex'})`}
                 </div>
                 {selectedQueueRecord ? (
                   <>
@@ -835,7 +830,6 @@ export default function MetaPage() {
                   disabled={syncingQuick || syncingFull}
                   className="w-full rounded-2xl border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-3 text-sm text-[var(--text-primary)]"
                 >
-                  <option value="all">Todas</option>
                   <option value="solo">SoloQ</option>
                   <option value="flex">Flex</option>
                 </select>

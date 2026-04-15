@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchPlayerHubData } from '../services/playerHub';
 import { readStoredProfile } from '../utils/profileStorage';
-import { clearModuleCache, saveCache } from '../utils/appCache';
-import { getApiErrorMessage } from '../utils/httpError';
+import { captureDisplayScreenshot } from '../utils/screenshot';
 
 function parseRiotId(input: string) {
   const parts = input.trim().split('#');
@@ -81,8 +80,7 @@ const featureCards = [
 export default function HomePage() {
   const [searchValue, setSearchValue] = useState('');
   const [region, setRegion] = useState('la2');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [inputError, setInputError] = useState('');
   const [summary, setSummary] = useState<any>(() => readStoredProfile());
   const [overview, setOverview] = useState<{
     totalMatches: number;
@@ -97,11 +95,7 @@ export default function HomePage() {
 
   async function handleSearch() {
     try {
-      setLoading(true);
-      setError('');
-
-      clearModuleCache();
-
+      setInputError('');
       const { gameName, tagLine } = parseRiotId(searchValue);
       const hubData = await fetchPlayerHubData({ gameName, tagLine, region });
       const profile = hubData.profile;
@@ -125,12 +119,10 @@ export default function HomePage() {
   }
 
   function handleReset() {
-    clearModuleCache();
-    localStorage.removeItem('riot-profile-summary');
+    reset();
     setSummary(null);
     setOverview(null);
     setSearchValue('');
-    setError('');
   }
 
   return (
@@ -200,14 +192,26 @@ export default function HomePage() {
                     </>
                   )}
                 </button>
+                <button
+                  onClick={handleScreenshot}
+                  className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3.5 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)]"
+                >
+                  Screenshot
+                </button>
               </div>
 
-              {error && (
+              {(error || inputError) && (
                 <div className="mt-4 flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
                   <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <p className="text-sm text-red-300">{error}</p>
+                  <p className="text-sm text-red-300">{inputError || error}</p>
+                </div>
+              )}
+
+              {!!warnings.length && (
+                <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                  {warnings[0]}
                 </div>
               )}
             </div>

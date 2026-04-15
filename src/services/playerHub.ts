@@ -31,13 +31,12 @@ type HubOverview = {
 type HubResult = {
   profile: any;
   modules: {
-    matches: { status: 'ok' | 'error'; data: any | null };
-    ranked: { status: 'ok' | 'error'; data: any | null };
-    live: { status: 'ok' | 'error'; data: any | null };
-    analytics: { status: 'ok' | 'error'; data: any | null };
+    matches: any | null;
+    ranked: any | null;
+    live: any | null;
+    analytics: any | null;
   };
   overview: HubOverview;
-  errors: string[];
 };
 
 function getMyParticipants(matches: any[] | undefined, puuid: string) {
@@ -88,48 +87,34 @@ function computeOverview(matches: any[] | undefined, puuid: string, moduleCount:
   };
 }
 
-function normalizeModuleResult(settled: PromiseSettledResult<any>) {
-  if (settled.status === 'fulfilled') {
-    return { status: 'ok' as const, data: settled.value, error: null };
-  }
-
-  const message =
-    settled.reason?.response?.data?.message ||
-    settled.reason?.message ||
-    'Error desconocido en el modulo';
-
-  return { status: 'error' as const, data: null, error: message };
-}
-
 export async function fetchPlayerHubData(input: SearchInput): Promise<HubResult> {
   const profile = await fetchProfileSummary(input);
   const puuid = profile?.account?.puuid;
   const platform = profile?.resolvedPlatform;
 
-  if (!puuid || !platform) {
-    throw new Error('El perfil no contiene puuid/plataforma validos');
-  }
-
-  const [matchResult, rankedResult, liveResult, analyticsResult] = await Promise.allSettled([
+  const requests = await Promise.allSettled([
     fetchMatchHistory({ puuid, platform, count: 20 }),
     fetchRankedOverview({ puuid, platform }),
     fetchLiveGame({ puuid, platform }),
     fetchAnalyticsSummary({ puuid, platform, queue: 'all' }),
   ]);
 
-  const matches = normalizeModuleResult(matchResult);
-  const ranked = normalizeModuleResult(rankedResult);
-  const live = normalizeModuleResult(liveResult);
-  const analytics = normalizeModuleResult(analyticsResult);
+  const matches = requests[0].status === 'fulfilled' ? requests[0].value : null;
+  const ranked = requests[1].status === 'fulfilled' ? requests[1].value : null;
+  const live = requests[2].status === 'fulfilled' ? requests[2].value : null;
+  const analytics = requests[3].status === 'fulfilled' ? requests[3].value : null;
 
-  const modulesReady = [matches, ranked, live, analytics].filter((item) => item.status === 'ok').length;
-  const overview = computeOverview(matches.data?.matches, puuid, modulesReady);
-  const errors = [matches.error, ranked.error, live.error, analytics.error].filter(Boolean) as string[];
+  const modulesReady = [matches, ranked, live, analytics].filter(Boolean).length;
+  const overview = computeOverview(matches?.matches, puuid, modulesReady);
 
   return {
     profile,
-    modules: { matches, ranked, live, analytics },
+    modules: {
+      matches,
+      ranked,
+      live,
+      analytics,
+    },
     overview,
-    errors,
   };
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usePlayerHub } from '../hooks/usePlayerHub';
+import { fetchPlayerHubData } from '../services/playerHub';
 import { readStoredProfile } from '../utils/profileStorage';
 import { captureDisplayScreenshot } from '../utils/screenshot';
 
@@ -82,14 +82,14 @@ export default function HomePage() {
   const [region, setRegion] = useState('la2');
   const [inputError, setInputError] = useState('');
   const [summary, setSummary] = useState<any>(() => readStoredProfile());
-  const {
-    loading,
-    error,
-    warnings,
-    overview,
-    runSearch,
-    reset,
-  } = usePlayerHub();
+  const [overview, setOverview] = useState<{
+    totalMatches: number;
+    winRate: number;
+    avgKda: number;
+    topChampion: string;
+    modulesReady: number;
+    modulesTotal: number;
+  } | null>(null);
 
   const navigate = useNavigate();
 
@@ -97,25 +97,32 @@ export default function HomePage() {
     try {
       setInputError('');
       const { gameName, tagLine } = parseRiotId(searchValue);
-      const profile = await runSearch({ gameName, tagLine, region });
+      const hubData = await fetchPlayerHubData({ gameName, tagLine, region });
+      const profile = hubData.profile;
+
       setSummary(profile);
+      setOverview(hubData.overview);
+
+      saveCache('profile', profile);
+      localStorage.setItem('riot-profile-summary', JSON.stringify(profile));
+
+      if (hubData.modules.live) saveCache('live', hubData.modules.live);
+      if (hubData.modules.matches) saveCache('matches', hubData.modules.matches);
+      if (hubData.modules.ranked) saveCache('rankedOverview', hubData.modules.ranked);
     } catch (err: any) {
-      setInputError(err?.message || 'Formato de Riot ID invalido');
+      setError(getApiErrorMessage(err, 'No se pudo cargar el perfil'));
+      setSummary(null);
+      setOverview(null);
+    } finally {
+      setLoading(false);
     }
   }
 
   function handleReset() {
     reset();
     setSummary(null);
+    setOverview(null);
     setSearchValue('');
-  }
-
-  async function handleScreenshot() {
-    try {
-      await captureDisplayScreenshot();
-    } catch (err) {
-      console.error(err);
-    }
   }
 
   return (
@@ -212,33 +219,7 @@ export default function HomePage() {
         </div>
 
         <div className="surface-card p-6">
-          <h2 className="text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Extraccion completa</h2>
-          <div className="mt-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-[var(--text-muted)]">Estado de modulos</p>
-            <p className="mt-1 text-lg font-semibold">
-              {overview ? `${overview.modulesReady}/${overview.modulesTotal} activos` : 'Esperando busqueda'}
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
-                <p className="text-[var(--text-muted)]">Partidas</p>
-                <p className="font-semibold">{overview ? overview.totalMatches : '--'}</p>
-              </div>
-              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
-                <p className="text-[var(--text-muted)]">Winrate</p>
-                <p className="font-semibold">{overview ? `${overview.winRate.toFixed(1)}%` : '--'}</p>
-              </div>
-              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
-                <p className="text-[var(--text-muted)]">KDA</p>
-                <p className="font-semibold">{overview ? overview.avgKda.toFixed(2) : '--'}</p>
-              </div>
-              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
-                <p className="text-[var(--text-muted)]">Main pick</p>
-                <p className="truncate font-semibold">{overview ? overview.topChampion : '--'}</p>
-              </div>
-            </div>
-          </div>
-
-          <h3 className="mt-5 text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Acciones rapidas</h3>
+          <h2 className="text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Acciones rapidas</h2>
           <div className="mt-4 grid gap-3">
             {navCards.slice(0, 4).map((card) => (
               <button

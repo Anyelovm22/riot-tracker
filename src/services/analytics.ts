@@ -150,6 +150,10 @@ export type AnalyticsSummaryResponse = {
   ranked: {
     rankedAvailable: boolean;
     leagueEntries: RankedEntry[];
+    queueRecords?: {
+      solo: { cachedMatches: number; officialMatches: number };
+      flex: { cachedMatches: number; officialMatches: number };
+    };
   };
   officialRecord: OfficialRecord | null;
   cacheCoverage: CacheCoverage | null;
@@ -241,7 +245,11 @@ export async function fetchAnalyticsSummary(params: FetchAnalyticsSummaryParams)
 }
 
 export async function fetchLpHistory(params: FetchLpHistoryParams) {
-  return cachedGet<LpHistoryResponse>('/analytics/lp-history', params, {
-    ttlMs: 1000 * 60 * 3,
+  const { data } = await api.get<LpHistoryResponse>('/analytics/lp-history', {
+    params: {
+      ...params,
+      ts: Date.now(),
+    },
   });
+  return data;
 }

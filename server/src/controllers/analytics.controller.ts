@@ -1264,6 +1264,29 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
 
     const rowsRaw = await prisma.playerMatchCache.findMany({
       where,
+      select: {
+        puuid: true,
+        platform: true,
+        matchId: true,
+        queueId: true,
+        gameCreation: true,
+        gameDuration: true,
+        championName: true,
+        kills: true,
+        deaths: true,
+        assists: true,
+        win: true,
+        totalMinionsKilled: true,
+        neutralMinionsKilled: true,
+        totalDamageDealtToChampions: true,
+        totalDamageTaken: true,
+        visionScore: true,
+        timeCCingOthers: true,
+        damageDealtToObjectives: true,
+        turretTakedowns: true,
+        goldEarned: true,
+        individualPosition: true,
+      },
       orderBy: {
         gameCreation: 'asc',
       },
@@ -1290,6 +1313,8 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
     }
 
     const normalizedEntries = normalizeLeagueEntries(leagueEntries);
+    const soloCached = rows.filter((row) => row.queueId === queueMap.solo).length;
+    const flexCached = rows.filter((row) => row.queueId === queueMap.flex).length;
 
     const soloOfficial =
       normalizedEntries.find((e: any) => e.queueType === 'RANKED_SOLO_5x5') || null;
@@ -1322,6 +1347,16 @@ export async function getAnalyticsSummary(req: Request, res: Response) {
       ranked: {
         rankedAvailable: normalizedEntries.length > 0,
         leagueEntries: normalizedEntries,
+        queueRecords: {
+          solo: {
+            cachedMatches: soloCached,
+            officialMatches: (soloOfficial?.wins || 0) + (soloOfficial?.losses || 0),
+          },
+          flex: {
+            cachedMatches: flexCached,
+            officialMatches: (flexOfficial?.wins || 0) + (flexOfficial?.losses || 0),
+          },
+        },
       },
       officialRecord,
       cacheCoverage:

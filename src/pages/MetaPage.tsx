@@ -480,21 +480,22 @@ export default function MetaPage() {
       else setLoading(true);
 
       setError('');
-
-      const data = await fetchAnalyticsSummary({
-        puuid: profile.account.puuid,
-        platform: profile.resolvedPlatform,
-        queue: selectedQueue,
-        startAt: selectedSeason.start.toISOString(),
-        endAt: selectedSeason.end.toISOString(),
-        seasonKey: selectedSeason.key,
-      });
+      const [data, ranked] = await Promise.all([
+        fetchAnalyticsSummary({
+          puuid: profile.account.puuid,
+          platform: profile.resolvedPlatform,
+          queue: selectedQueue,
+          startAt: selectedSeason.start.toISOString(),
+          endAt: selectedSeason.end.toISOString(),
+          seasonKey: selectedSeason.key,
+        }),
+        fetchRankedOverview({
+          puuid: profile.account.puuid,
+          platform: profile.resolvedPlatform,
+        }).catch(() => null),
+      ]);
 
       setAnalyticsResponse(data);
-      const ranked = await fetchRankedOverview({
-        puuid: profile.account.puuid,
-        platform: profile.resolvedPlatform,
-      }).catch(() => null);
       setRankedOverview(ranked);
 
       const hasNoAnalyticsSample = !data.analytics || data.sample?.totalMatches === 0;
@@ -608,10 +609,11 @@ export default function MetaPage() {
     const queueType = lpQueue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
     return rankedEntries.find((entry) => entry.queueType === queueType) || null;
   }, [rankedEntries, lpQueue]);
+  const queueRecords = analyticsResponse?.ranked?.queueRecords;
 
   const sanitizedLpHistory = useMemo(() => {
     const seen = new Set<string>();
-    return (lpHistory || [])
+    const base = (lpHistory || [])
       .filter((point) => {
         const lp = Number(point?.leaguePoints);
         const rankValue = Number(point?.rankValue);
@@ -622,7 +624,31 @@ export default function MetaPage() {
         return true;
       })
       .sort((a, b) => new Date(a.snapshotAt).getTime() - new Date(b.snapshotAt).getTime());
-  }, [lpHistory]);
+
+    if (base.length > 0) return base;
+
+    if (!lpRankedEntry) return [];
+
+    const nowIso = new Date().toISOString();
+    return [
+      {
+        label: new Date(nowIso).toLocaleString(),
+        snapshotAt: nowIso,
+        tier: lpRankedEntry.tier,
+        rank: lpRankedEntry.rank,
+        leaguePoints: lpRankedEntry.leaguePoints,
+        wins: lpRankedEntry.wins,
+        losses: lpRankedEntry.losses,
+        lpChange: 0,
+        lpGain: 0,
+        lpLoss: 0,
+        winsDelta: 0,
+        lossesDelta: 0,
+        matchesDelta: 0,
+        rankValue: Number(lpRankedEntry.leaguePoints) || 0,
+      },
+    ];
+  }, [lpHistory, lpRankedEntry]);
 
   const lpChanges = useMemo(() => {
     return sanitizedLpHistory.reduce(
@@ -740,6 +766,9 @@ export default function MetaPage() {
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
                       {soloRecord.leaguePoints} LP · {soloRecord.wins}W / {soloRecord.losses}L
                     </div>
+                    <div className="mt-1 text-xs text-[var(--text-muted)]">
+                      {`Partidas: ${soloRecord.wins + soloRecord.losses} (Riot) · ${queueRecords?.solo?.cachedMatches ?? 0} en cache`}
+                    </div>
                   </>
                 ) : (
                   <div className="mt-3 text-sm text-[var(--text-muted)]">Sin datos de SoloQ.</div>
@@ -762,6 +791,9 @@ export default function MetaPage() {
                     </div>
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
                       {flexRecord.leaguePoints} LP · {flexRecord.wins}W / {flexRecord.losses}L
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--text-muted)]">
+                      {`Partidas: ${flexRecord.wins + flexRecord.losses} (Riot) · ${queueRecords?.flex?.cachedMatches ?? 0} en cache`}
                     </div>
                   </>
                 ) : (

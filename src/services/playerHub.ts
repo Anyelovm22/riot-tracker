@@ -40,6 +40,33 @@ type HubResult = {
   errors: string[];
 };
 
+type HubCacheEnvelope = {
+  savedAt: number;
+  data: HubResult;
+};
+
+const HUB_CACHE_TTL_MS = 1000 * 60;
+const hubCache = new Map<string, HubCacheEnvelope>();
+const hubInFlight = new Map<string, Promise<HubResult>>();
+
+function buildHubCacheKey(input: SearchInput) {
+  return [
+    String(input.region || '').trim().toLowerCase(),
+    String(input.gameName || '').trim().toLowerCase(),
+    String(input.tagLine || '').trim().toLowerCase(),
+  ].join(':');
+}
+
+function getHubFromCache(cacheKey: string) {
+  const cached = hubCache.get(cacheKey);
+  if (!cached) return null;
+  if (Date.now() - cached.savedAt > HUB_CACHE_TTL_MS) {
+    hubCache.delete(cacheKey);
+    return null;
+  }
+  return cached.data;
+}
+
 function getMyParticipants(matches: any[] | undefined, puuid: string) {
   if (!Array.isArray(matches)) return [];
 
@@ -88,7 +115,7 @@ function computeOverview(matches: any[] | undefined, puuid: string, moduleCount:
   };
 }
 
-export async function fetchPlayerHubData(input: SearchInput): Promise<HubResult> {
+async function computePlayerHubData(input: SearchInput): Promise<HubResult> {
   const profile = await fetchProfileSummary(input);
   const puuid = profile?.account?.puuid;
   const platform = profile?.resolvedPlatform;
@@ -133,4 +160,28 @@ export async function fetchPlayerHubData(input: SearchInput): Promise<HubResult>
     overview,
     errors,
   };
+}
+
+export async function fetchPlayerHubData(input: SearchInput): Promise<HubResult> {
+  const cacheKey = buildHubCacheKey(input);
+  const cached = getHubFromCache(cacheKey);
+  if (cached) return cached;
+
+  const running = hubInFlight.get(cacheKey);
+  if (running) return running;
+
+  const request = computePlayerHubData(input)
+    .then((result) => {
+      hubCache.set(cacheKey, {
+        savedAt: Date.now(),
+        data: result,
+      });
+      return result;
+    })
+    .finally(() => {
+      hubInFlight.delete(cacheKey);
+    });
+
+  hubInFlight.set(cacheKey, request);
+  return request;
 }

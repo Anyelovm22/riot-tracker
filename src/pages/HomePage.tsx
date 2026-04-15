@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchProfileSummary } from '../services/profile';
-import { fetchLiveGame } from '../services/live';
+import { fetchPlayerHubData } from '../services/playerHub';
 import { readStoredProfile } from '../utils/profileStorage';
 import { clearModuleCache, saveCache } from '../utils/appCache';
 import { getApiErrorMessage } from '../utils/httpError';
@@ -85,6 +84,14 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [summary, setSummary] = useState<any>(() => readStoredProfile());
+  const [overview, setOverview] = useState<{
+    totalMatches: number;
+    winRate: number;
+    avgKda: number;
+    topChampion: string;
+    modulesReady: number;
+    modulesTotal: number;
+  } | null>(null);
 
   const navigate = useNavigate();
 
@@ -96,23 +103,22 @@ export default function HomePage() {
       clearModuleCache();
 
       const { gameName, tagLine } = parseRiotId(searchValue);
-      const profile = await fetchProfileSummary({ gameName, tagLine, region });
+      const hubData = await fetchPlayerHubData({ gameName, tagLine, region });
+      const profile = hubData.profile;
 
       setSummary(profile);
+      setOverview(hubData.overview);
+
       saveCache('profile', profile);
       localStorage.setItem('riot-profile-summary', JSON.stringify(profile));
 
-      const puuid = profile.account.puuid;
-      const platform = profile.resolvedPlatform;
-
-      const liveResult = await fetchLiveGame({ puuid, platform }).catch(() => null);
-
-      if (liveResult) {
-        saveCache('live', liveResult);
-      }
+      if (hubData.modules.live) saveCache('live', hubData.modules.live);
+      if (hubData.modules.matches) saveCache('matches', hubData.modules.matches);
+      if (hubData.modules.ranked) saveCache('rankedOverview', hubData.modules.ranked);
     } catch (err: any) {
       setError(getApiErrorMessage(err, 'No se pudo cargar el perfil'));
       setSummary(null);
+      setOverview(null);
     } finally {
       setLoading(false);
     }
@@ -122,34 +128,27 @@ export default function HomePage() {
     clearModuleCache();
     localStorage.removeItem('riot-profile-summary');
     setSummary(null);
+    setOverview(null);
     setSearchValue('');
     setError('');
   }
 
   return (
-    <main className="page-shell px-0 py-0 md:px-0 md:py-0">
-      {/* Background effects */}
-      <div className="pointer-events-none absolute inset-0 bg-[var(--gradient-glow)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_rgba(139,92,246,0.1),_transparent_50%)]" />
-
-      {/* Hero Section */}
-      <section className="relative border-b border-[var(--border-subtle)]">
-        <div className="mx-auto max-w-6xl px-6 py-16">
-          <div className="flex flex-col items-center text-center">
-            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-blue-500/25">
-              <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight text-[var(--text-primary)] md:text-5xl">
-              Riot<span className="text-[var(--accent-primary)]">Tracker</span>
+    <main className="page-shell md:px-6">
+      <section className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.5fr,1fr]">
+        <div className="surface-card relative overflow-hidden p-6 md:p-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_5%_0%,rgba(99,119,255,.26),transparent_35%),radial-gradient(circle_at_90%_15%,rgba(35,208,255,.18),transparent_33%)]" />
+          <div className="relative">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Mobalytics style dashboard</p>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-5xl">
+              Analiza tu cuenta y domina la
+              <span className="ml-2 bg-gradient-to-r from-[#8ea0ff] to-[#3bd7ff] bg-clip-text text-transparent">Grieta</span>
             </h1>
-            <p className="mt-4 max-w-lg text-lg text-[var(--text-secondary)]">
-              Busca un invocador y accede al historial, ranked, live, builds y champions.
+            <p className="mt-3 max-w-2xl text-[15px] text-[var(--text-secondary)]">
+              Experiencia completa tipo companion app: perfil, historial, live game, builds y rendimiento por campeones en una sola vista.
             </p>
 
-            {/* Search Form */}
-            <div className="mt-10 w-full max-w-2xl">
+            <div className="mt-7 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 p-4">
               <div className="flex flex-col gap-3 md:flex-row">
                 <div className="relative flex-1">
                   <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -160,14 +159,14 @@ export default function HomePage() {
                     onChange={(e) => setSearchValue(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                     placeholder="Nombre#TAG (ej: Dandrel10#LAN)"
-                    className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] py-3.5 pl-12 pr-4 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition-all focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20"
+                    className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] py-3.5 pl-12 pr-4 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[#6f86ff] focus:outline-none"
                   />
                 </div>
 
                 <select
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
-                  className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3.5 text-[var(--text-primary)] transition-all focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20"
+                  className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3.5 text-[var(--text-primary)] focus:border-[#6f86ff] focus:outline-none"
                 >
                   <option value="la2">LAS</option>
                   <option value="la1">LAN</option>
@@ -182,7 +181,7 @@ export default function HomePage() {
                 <button
                   onClick={handleSearch}
                   disabled={loading}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-primary)] px-6 py-3.5 font-medium text-white shadow-lg shadow-blue-500/25 transition-all hover:bg-[var(--accent-primary-hover)] hover:shadow-blue-500/40 disabled:opacity-60"
+                  className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#5f79ff] to-[#2cd4ff] px-6 py-3.5 font-semibold text-white shadow-[0_10px_22px_rgba(76,112,255,.33)] transition hover:brightness-110 disabled:opacity-60"
                 >
                   {loading ? (
                     <>
@@ -214,16 +213,69 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+
+        <div className="surface-card p-6">
+          <h2 className="text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Extraccion completa</h2>
+          <div className="mt-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-[var(--text-muted)]">Estado de modulos</p>
+            <p className="mt-1 text-lg font-semibold">
+              {overview ? `${overview.modulesReady}/${overview.modulesTotal} activos` : 'Esperando busqueda'}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
+                <p className="text-[var(--text-muted)]">Partidas</p>
+                <p className="font-semibold">{overview ? overview.totalMatches : '--'}</p>
+              </div>
+              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
+                <p className="text-[var(--text-muted)]">Winrate</p>
+                <p className="font-semibold">{overview ? `${overview.winRate.toFixed(1)}%` : '--'}</p>
+              </div>
+              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
+                <p className="text-[var(--text-muted)]">KDA</p>
+                <p className="font-semibold">{overview ? overview.avgKda.toFixed(2) : '--'}</p>
+              </div>
+              <div className="rounded-lg bg-[var(--bg-card)] px-2 py-1.5">
+                <p className="text-[var(--text-muted)]">Main pick</p>
+                <p className="truncate font-semibold">{overview ? overview.topChampion : '--'}</p>
+              </div>
+            </div>
+          </div>
+
+          <h3 className="mt-5 text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Acciones rapidas</h3>
+          <div className="mt-4 grid gap-3">
+            {navCards.slice(0, 4).map((card) => (
+              <button
+                key={`quick-${card.key}`}
+                onClick={() => navigate(card.path)}
+                className="flex items-center justify-between rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-3 text-left transition hover:border-[#5f79ff]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br ${card.color} text-white`}>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d={card.icon} />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold">{card.title}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{card.desc}</p>
+                  </div>
+                </div>
+                <svg className="h-4 w-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
 
-      {/* Content Section */}
-      <section className="relative mx-auto max-w-6xl px-6 py-12">
+      <section className="mx-auto mt-6 max-w-7xl">
         {!summary ? (
-          <>
-            <h2 className="mb-6 text-center text-sm font-medium uppercase tracking-wider text-[var(--text-muted)]">
+          <div className="surface-card p-6">
+            <h2 className="mb-6 text-sm font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
               Funcionalidades disponibles
             </h2>
-            <div className="grid gap-4 md:grid-cols-5">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {featureCards.map((card) => (
                 <div
                   key={card.title}
@@ -239,12 +291,11 @@ export default function HomePage() {
                 </div>
               ))}
             </div>
-          </>
+          </div>
         ) : (
           <div className="space-y-8 animate-fade-in">
-            {/* Profile Card */}
             <div className="overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)]">
-              <div className="h-24 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20" />
+              <div className="h-24 bg-gradient-to-r from-[#5f79ff]/30 via-[#8e6bff]/20 to-[#23d0ff]/20" />
               <div className="px-6 pb-6">
                 <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                   <div className="flex items-end gap-4">
@@ -289,7 +340,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Navigation Cards */}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {navCards.map((card) => (
                 <button

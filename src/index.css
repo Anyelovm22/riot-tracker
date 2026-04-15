@@ -4,36 +4,38 @@
 
 :root {
   color-scheme: dark;
-  
-  /* Background colors */
-  --bg-primary: #0a0a0a;
-  --bg-secondary: #111111;
-  --bg-tertiary: #171717;
-  --bg-elevated: #1a1a1a;
-  --bg-card: #141414;
-  --bg-card-hover: #1c1c1c;
+
+  /* Background colors inspired by modern game dashboards */
+  --bg-primary: #0b1020;
+  --bg-secondary: #11172b;
+  --bg-tertiary: #151d34;
+  --bg-elevated: #1a2442;
+  --bg-card: #121a30;
+  --bg-card-hover: #1b2545;
+  --bg-sidebar: #0c1224;
+  --bg-topbar: #0d1327;
   
   /* Border colors */
-  --border-default: #262626;
-  --border-subtle: #1f1f1f;
-  --border-hover: #333333;
+  --border-default: #2a365e;
+  --border-subtle: #1f2742;
+  --border-hover: #3f4c79;
   
   /* Text colors */
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-subtle: #52525b;
+  --text-primary: #f7f9ff;
+  --text-secondary: #b2bddf;
+  --text-muted: #7f8ab1;
+  --text-subtle: #5f6b95;
   
   /* Accent colors */
-  --accent-primary: #3b82f6;
-  --accent-primary-hover: #2563eb;
+  --accent-primary: #6b83ff;
+  --accent-primary-hover: #4f67ea;
   --accent-success: #10b981;
   --accent-warning: #f59e0b;
   --accent-danger: #ef4444;
   --accent-purple: #a855f7;
   
   /* Gradient */
-  --gradient-glow: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent);
+  --gradient-glow: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(111, 134, 255, 0.2), transparent);
 }
 
 html,
@@ -45,8 +47,8 @@ body,
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 12% 12%, rgba(59, 130, 246, 0.12), transparent 35%),
-    radial-gradient(circle at 88% 4%, rgba(168, 85, 247, 0.1), transparent 30%),
+    radial-gradient(circle at 12% 12%, rgba(87, 106, 255, 0.2), transparent 35%),
+    radial-gradient(circle at 88% 4%, rgba(36, 209, 255, 0.12), transparent 30%),
     var(--bg-primary);
   color: var(--text-primary);
   font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,

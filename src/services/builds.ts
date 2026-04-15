@@ -1,4 +1,4 @@
-import { cachedGet } from './api';
+import { api } from './api';
 
 type BuildInsightsParams = {
   champion: string;
@@ -26,9 +26,17 @@ function getInsightsCacheKey(params: BuildInsightsParams, view: 'summary' | 'det
 }
 
 async function fetchChampionBuildInsightsByView(params: BuildInsightsParams, view: 'summary' | 'details') {
-  const cacheKey = getInsightsCacheKey(params, view);
   const endpoint = view === 'summary' ? '/builds/champion-summary' : '/builds/champion-details';
-  return cachedGet(endpoint, { ...params, cacheKey }, { ttlMs: INSIGHTS_TTL_MS });
+  const { data } = await api.get(endpoint, {
+    params: {
+      ...params,
+      _ts: Date.now(),
+      _view: view,
+      _key: getInsightsCacheKey(params, view),
+      _ttl: INSIGHTS_TTL_MS,
+    },
+  });
+  return data;
 }
 
 export function fetchChampionBuildSummary(params: BuildInsightsParams) {

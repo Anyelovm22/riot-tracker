@@ -418,6 +418,7 @@ export default function MetaPage() {
   const profile = readStoredProfile();
   const hasLoadedRef = useRef(false);
   const autoSeedSyncRef = useRef(false);
+  const lpBootstrapRef = useRef<Record<'solo' | 'flex', boolean>>({ solo: false, flex: false });
 
   const today = useMemo(() => new Date(), []);
   const seasonOptions = useMemo(() => buildSeasonOptions(today), [today]);
@@ -453,8 +454,38 @@ export default function MetaPage() {
         platform: profile.resolvedPlatform,
         queue,
       });
+      const points = data.points || [];
+      setLpHistory(points);
 
-      setLpHistory(data.points || []);
+      if (points.length === 0 && !lpBootstrapRef.current[queue]) {
+        lpBootstrapRef.current[queue] = true;
+
+        const ranked = await fetchRankedOverview({
+          puuid: profile.account.puuid,
+          platform: profile.resolvedPlatform,
+        }).catch(() => null);
+
+        const queueType = queue === 'flex' ? 'RANKED_FLEX_SR' : 'RANKED_SOLO_5x5';
+        const entry = ranked?.leagueEntries?.find((item: any) => item.queueType === queueType);
+        const totalOfficial = Number(entry?.wins || 0) + Number(entry?.losses || 0);
+
+        if (totalOfficial > 0) {
+          await syncAnalyticsMatches({
+            puuid: profile.account.puuid,
+            platform: profile.resolvedPlatform,
+            maxMatches: 80,
+            mode: 'incremental',
+          }).catch(() => null);
+
+          const refreshed = await fetchLpHistory({
+            puuid: profile.account.puuid,
+            platform: profile.resolvedPlatform,
+            queue,
+          });
+
+          setLpHistory(refreshed.points || []);
+        }
+      }
     } catch {
       setLpHistory([]);
     }
@@ -771,7 +802,11 @@ export default function MetaPage() {
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3 text-sm text-[var(--text-muted)]">Sin datos de SoloQ.</div>
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">
+                    {queueRecords?.solo
+                      ? `Sin entry visible, pero Riot reporta ${queueRecords.solo.officialMatches} partidas oficiales en SoloQ.`
+                      : 'Sin datos de SoloQ.'}
+                  </div>
                 )}
               </div>
 
@@ -797,7 +832,11 @@ export default function MetaPage() {
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3 text-sm text-[var(--text-muted)]">Sin datos de Flex.</div>
+                  <div className="mt-3 text-sm text-[var(--text-muted)]">
+                    {queueRecords?.flex
+                      ? `Sin entry visible, pero Riot reporta ${queueRecords.flex.officialMatches} partidas oficiales en Flex.`
+                      : 'Sin datos de Flex.'}
+                  </div>
                 )}
               </div>
 

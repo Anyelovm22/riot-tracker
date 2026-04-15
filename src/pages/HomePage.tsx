@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlayerHub } from '../hooks/usePlayerHub';
-import { captureDisplayScreenshot } from '../utils/screenshot';
+import { captureAppSnapshot, captureDisplayScreenshot } from '../utils/screenshot';
 
 function parseRiotId(input: string) {
   const parts = input.trim().split('#');
@@ -109,9 +109,15 @@ export default function HomePage() {
 
   async function handleScreenshot() {
     try {
-      await captureDisplayScreenshot();
+      await captureAppSnapshot();
     } catch (err) {
-      setInputError(err instanceof Error ? err.message : 'No se pudo tomar screenshot');
+      try {
+        await captureDisplayScreenshot();
+      } catch (fallbackErr) {
+        setInputError(
+          fallbackErr instanceof Error ? fallbackErr.message : 'No se pudo tomar screenshot'
+        );
+      }
     }
   }
 

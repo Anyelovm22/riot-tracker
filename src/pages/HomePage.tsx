@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchProfileSummary } from '../services/profile';
-import { fetchLiveGame } from '../services/live';
+import { fetchPlayerHubData } from '../services/playerHub';
 import { readStoredProfile } from '../utils/profileStorage';
 import { clearModuleCache, saveCache } from '../utils/appCache';
 import { getApiErrorMessage } from '../utils/httpError';
@@ -85,6 +84,14 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [summary, setSummary] = useState<any>(() => readStoredProfile());
+  const [overview, setOverview] = useState<{
+    totalMatches: number;
+    winRate: number;
+    avgKda: number;
+    topChampion: string;
+    modulesReady: number;
+    modulesTotal: number;
+  } | null>(null);
 
   const navigate = useNavigate();
 
@@ -96,23 +103,22 @@ export default function HomePage() {
       clearModuleCache();
 
       const { gameName, tagLine } = parseRiotId(searchValue);
-      const profile = await fetchProfileSummary({ gameName, tagLine, region });
+      const hubData = await fetchPlayerHubData({ gameName, tagLine, region });
+      const profile = hubData.profile;
 
       setSummary(profile);
+      setOverview(hubData.overview);
+
       saveCache('profile', profile);
       localStorage.setItem('riot-profile-summary', JSON.stringify(profile));
 
-      const puuid = profile.account.puuid;
-      const platform = profile.resolvedPlatform;
-
-      const liveResult = await fetchLiveGame({ puuid, platform }).catch(() => null);
-
-      if (liveResult) {
-        saveCache('live', liveResult);
-      }
+      if (hubData.modules.live) saveCache('live', hubData.modules.live);
+      if (hubData.modules.matches) saveCache('matches', hubData.modules.matches);
+      if (hubData.modules.ranked) saveCache('rankedOverview', hubData.modules.ranked);
     } catch (err: any) {
       setError(getApiErrorMessage(err, 'No se pudo cargar el perfil'));
       setSummary(null);
+      setOverview(null);
     } finally {
       setLoading(false);
     }
@@ -122,6 +128,7 @@ export default function HomePage() {
     clearModuleCache();
     localStorage.removeItem('riot-profile-summary');
     setSummary(null);
+    setOverview(null);
     setSearchValue('');
     setError('');
   }

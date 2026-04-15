@@ -31,12 +31,13 @@ type HubOverview = {
 type HubResult = {
   profile: any;
   modules: {
-    matches: any | null;
-    ranked: any | null;
-    live: any | null;
-    analytics: any | null;
+    matches: { ok: boolean; data: any | null; error?: string };
+    ranked: { ok: boolean; data: any | null; error?: string };
+    live: { ok: boolean; data: any | null; error?: string };
+    analytics: { ok: boolean; data: any | null; error?: string };
   };
   overview: HubOverview;
+  errors: string[];
 };
 
 function getMyParticipants(matches: any[] | undefined, puuid: string) {
@@ -91,6 +92,9 @@ export async function fetchPlayerHubData(input: SearchInput): Promise<HubResult>
   const profile = await fetchProfileSummary(input);
   const puuid = profile?.account?.puuid;
   const platform = profile?.resolvedPlatform;
+  if (!puuid || !platform) {
+    throw new Error('No se pudo resolver puuid/plataforma para este Riot ID');
+  }
 
   const requests = await Promise.allSettled([
     fetchMatchHistory({ puuid, platform, count: 20 }),
@@ -99,13 +103,24 @@ export async function fetchPlayerHubData(input: SearchInput): Promise<HubResult>
     fetchAnalyticsSummary({ puuid, platform, queue: 'all' }),
   ]);
 
-  const matches = requests[0].status === 'fulfilled' ? requests[0].value : null;
-  const ranked = requests[1].status === 'fulfilled' ? requests[1].value : null;
-  const live = requests[2].status === 'fulfilled' ? requests[2].value : null;
-  const analytics = requests[3].status === 'fulfilled' ? requests[3].value : null;
+  const matches = requests[0].status === 'fulfilled'
+    ? { ok: true, data: requests[0].value }
+    : { ok: false, data: null, error: String(requests[0].reason?.message || 'No se pudo cargar matches') };
+  const ranked = requests[1].status === 'fulfilled'
+    ? { ok: true, data: requests[1].value }
+    : { ok: false, data: null, error: String(requests[1].reason?.message || 'No se pudo cargar ranked') };
+  const live = requests[2].status === 'fulfilled'
+    ? { ok: true, data: requests[2].value }
+    : { ok: false, data: null, error: String(requests[2].reason?.message || 'No se pudo cargar live') };
+  const analytics = requests[3].status === 'fulfilled'
+    ? { ok: true, data: requests[3].value }
+    : { ok: false, data: null, error: String(requests[3].reason?.message || 'No se pudo cargar analytics') };
 
-  const modulesReady = [matches, ranked, live, analytics].filter(Boolean).length;
-  const overview = computeOverview(matches?.matches, puuid, modulesReady);
+  const modulesReady = [matches, ranked, live, analytics].filter((module) => module.ok).length;
+  const overview = computeOverview(matches.data?.matches, puuid, modulesReady);
+  const errors = [matches, ranked, live, analytics]
+    .filter((module) => !module.ok && module.error)
+    .map((module) => module.error as string);
 
   return {
     profile,
@@ -116,5 +131,6 @@ export async function fetchPlayerHubData(input: SearchInput): Promise<HubResult>
       analytics,
     },
     overview,
+    errors,
   };
 }

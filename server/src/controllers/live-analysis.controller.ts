@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { getLiveClientAllGameData } from '../services/live-client.service';
-import { getLiveSnapshot, setLiveSnapshot } from '../data/liveSnapshotStore';
+import { getLatestLiveSnapshot, getLiveSnapshot, setLiveSnapshot } from '../data/liveSnapshotStore';
 
 type Role = 'TOP' | 'JUNGLE' | 'MIDDLE' | 'BOTTOM' | 'UTILITY' | 'NONE';
 type ChampionClass =
@@ -1913,7 +1913,19 @@ export async function getLiveAnalysis(req: Request, res: Response) {
 
     const snapshotKey = String(req.query.snapshotKey || 'local-player').trim();
     const pushedSnapshot = getLiveSnapshot(snapshotKey);
-    const allGameData = pushedSnapshot?.snapshot || (await getLiveClientAllGameData());
+    let allGameData = pushedSnapshot?.snapshot;
+
+    if (!allGameData) {
+      try {
+        allGameData = await getLiveClientAllGameData();
+      } catch (liveClientError: any) {
+        const latestSnapshot = getLatestLiveSnapshot();
+        if (!latestSnapshot?.snapshot) {
+          throw liveClientError;
+        }
+        allGameData = latestSnapshot.snapshot;
+      }
+    }
     const players: LivePlayer[] = (allGameData?.allPlayers || []).map(mapPlayer);
 
     if (!players.length) {
@@ -2067,7 +2079,7 @@ export async function getLiveAnalysis(req: Request, res: Response) {
     ) {
       return res.status(503).json({
         message:
-          'El análisis en vivo local no está disponible. Abre League of Legends y entra en una partida en esta misma PC para usar esta función.',
+          'El análisis en vivo local no está disponible por puerto 2999. Puedes usar /live/push para enviar snapshots remotos al servidor y habilitar el coach.',
         code: 'LIVE_CLIENT_UNAVAILABLE',
         detail: error?.message || null,
       });

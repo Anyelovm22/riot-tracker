@@ -111,6 +111,38 @@ export default function ChampionBuildsPage() {
   }, [championOptions, versusInput]);
 
   const data = detailsData || summaryData;
+  const buildChart = useMemo(() => {
+    const labels = data?.charts?.buildWinrate?.labels || [];
+    const percentages = data?.charts?.buildWinrate?.percentages || [];
+    const values = data?.charts?.buildWinrate?.values || [];
+
+    if (labels.length && percentages.length && values.length) {
+      return { labels, percentages, values };
+    }
+
+    const fallbackRows = (data?.builds?.mostPopular || []).slice(0, 5);
+    return {
+      labels: fallbackRows.map((_: any, index: number) => `Build ${index + 1}`),
+      percentages: fallbackRows.map((row: any) => row?.winRate || 0),
+      values: fallbackRows.map((row: any) => row?.games || 0),
+    };
+  }, [data]);
+  const recommendations = useMemo(() => {
+    if (!data) return [];
+    const list: string[] = [];
+    const primary = data?.overview?.primaryBuild;
+    const topCore = (primary?.coreItems || []).slice(0, 3).map((item: any) => item?.name).filter(Boolean);
+    if (topCore.length) list.push(`Core recomendado: ${topCore.join(' + ')}.`);
+    if (data?.overview?.skillOrder?.length) {
+      list.push(`Prioriza skill order: ${data.overview.skillOrder.join(' > ')}.`);
+    }
+    const goodVs = (detailsData?.secondary?.matchups || []).slice(0, 2).map((row: any) => `${row.championName} (${row.winRate}% WR)`);
+    if (goodVs.length) list.push(`Matchups favorables detectados: ${goodVs.join(', ')}.`);
+    const badVs = (detailsData?.secondary?.counters || []).slice(0, 2).map((row: any) => `${row.championName} (${row.winRate}% WR)`);
+    if (badVs.length) list.push(`Cuidado contra: ${badVs.join(', ')}.`);
+    if (!list.length) list.push('No hubo muestra suficiente para recomendaciones fuertes; prueba cambiando cola, parche o rol.');
+    return list;
+  }, [data, detailsData]);
   const patchOptions = useMemo(() => {
     const fromApi = Array.isArray(data?.availablePatches) ? data.availablePatches.map((row: any) => row.patch).filter(Boolean) : [];
     return ['all', 'latest', ...fromApi.filter((patch: string) => patch !== 'all' && patch !== 'latest')];
@@ -318,9 +350,9 @@ export default function ChampionBuildsPage() {
                 <div className="mt-4 h-72">
                   <Suspense fallback={<div className="h-full animate-pulse rounded-lg bg-white/5" />}>
                     <BuildWinrateChart
-                      labels={data?.charts?.buildWinrate?.labels || []}
-                      percentages={data?.charts?.buildWinrate?.percentages || []}
-                      values={data?.charts?.buildWinrate?.values || []}
+                      labels={buildChart.labels}
+                      percentages={buildChart.percentages}
+                      values={buildChart.values}
                     />
                   </Suspense>
                 </div>
@@ -343,6 +375,17 @@ export default function ChampionBuildsPage() {
                     );
                   })}
                 </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Recomendaciones automáticas</h2>
+              <div className="mt-3 space-y-2">
+                {recommendations.map((tip, index) => (
+                  <div key={`rec-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text-secondary)]">
+                    {tip}
+                  </div>
+                ))}
               </div>
             </section>
 

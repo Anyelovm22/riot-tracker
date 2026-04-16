@@ -563,16 +563,10 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
 
   const sortedMatches = [...collected].sort((a, b) => b.gameCreation - a.gameCreation);
   const queueFiltered = sortedMatches.filter((m) => (normalizedQueue === 'solo' ? m.queueId === 420 : m.queueId === 440));
-  if (!queueFiltered.length) {
-    return buildPayload(
-      { ...filters, champion: championName, platform: platformInput, role: normalizedRole, rank: normalizedRank, queue: normalizedQueue },
-      [],
-      0,
-      items,
-      `No hay suficientes partidas de ${normalizedQueue === 'solo' ? 'SoloQ' : 'Flex'} para los filtros seleccionados.`
-    );
-  }
-  const queueBase = queueFiltered;
+  const queueBase = queueFiltered.length ? queueFiltered : sortedMatches;
+  const queueFallbackReason = !queueFiltered.length
+    ? `No hubo muestra suficiente en ${normalizedQueue === 'solo' ? 'SoloQ' : 'Flex'}; se usó muestra combinada de ranked para mantener recomendaciones y gráficas activas.`
+    : '';
   const latestPatch = queueBase[0]?.patch || 'latest';
   const requestedPatch = normalizePatch(filters.patch);
 
@@ -593,6 +587,7 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
   let effectiveRole = normalizedRole;
   let effectivePatch = normalizedPatch === 'latest' ? latestPatch : filters.patch;
   const fallbackReasons: string[] = [];
+  if (queueFallbackReason) fallbackReasons.push(queueFallbackReason);
 
   if (!effective.length && byRoleAllPatches.length) {
     effective = byRoleAllPatches;

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlayerHub } from '../hooks/usePlayerHub';
-import { captureAppSnapshot, captureDisplayScreenshot } from '../utils/screenshot';
 
 function parseRiotId(input: string) {
   const parts = input.trim().split('#');
@@ -107,20 +106,6 @@ export default function HomePage() {
     setInputError('');
   }
 
-  async function handleScreenshot() {
-    try {
-      await captureAppSnapshot();
-    } catch (err) {
-      try {
-        await captureDisplayScreenshot();
-      } catch (fallbackErr) {
-        setInputError(
-          fallbackErr instanceof Error ? fallbackErr.message : 'No se pudo tomar screenshot'
-        );
-      }
-    }
-  }
-
   return (
     <main className="page-shell md:px-6">
       <section className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.5fr,1fr]">
@@ -187,12 +172,6 @@ export default function HomePage() {
                       Buscar
                     </>
                   )}
-                </button>
-                <button
-                  onClick={handleScreenshot}
-                  className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3.5 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)]"
-                >
-                  Screenshot
                 </button>
               </div>
 

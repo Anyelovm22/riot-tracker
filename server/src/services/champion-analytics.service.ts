@@ -1,4 +1,4 @@
-import { getChampionList, getEliteLeagueEntries, getItemData, getMatchById, getMatchIdsByPuuid, getSummonerBySummonerId } from './riot.service';
+import { getChampionById, getChampionList, getEliteLeagueEntries, getItemData, getMatchById, getMatchIdsByPuuid, getSummonerBySummonerId } from './riot.service';
 
 export type ChampionAnalyticsFilters = {
   champion: string;
@@ -114,6 +114,143 @@ const normalizePatch = (value: string) => {
   const [major, minor] = String(value || '').split('.');
   return major && minor ? `${major}.${minor}` : 'unknown';
 };
+
+async function getDdragonFallbackItems(championName: string) {
+  try {
+    const championsData = await getChampionList();
+    const champion = (championsData?.champions || []).find(
+      (row: any) => normalizeToken(row?.name) === normalizeToken(championName)
+    );
+    if (!champion?.id) return [] as number[];
+
+    const detail = await getChampionById(champion.id).catch(() => null);
+    const blocks = (detail?.recommended || [])
+      .flatMap((entry: any) => entry?.blocks || [])
+      .flatMap((block: any) => block?.items || []);
+
+    const itemIds: number[] = blocks
+      .map((item: any) => Number(item?.id))
+      .filter((id: number) => Number.isFinite(id) && id > 0);
+
+    return [...new Set(itemIds)].slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+
+function buildDdragonFallbackPayload(
+  filters: ChampionAnalyticsFilters,
+  championName: string,
+  itemMap: Record<string, any>,
+  fallbackItemIds: number[],
+): ChampionAnalyticsPayload {
+  const normalizedItems = fallbackItemIds
+    .filter((id) => id > 0)
+    .map((id) => ({
+      itemId: id,
+      name: itemMap[String(id)]?.name || `Item ${id}`,
+    }));
+
+  const primaryItems = normalizedItems.slice(0, 6);
+  const starterItems = normalizedItems.slice(0, 3).map((row) => ({
+    ...row,
+    games: 0,
+    wins: 0,
+    winRate: 0,
+    popularity: 0,
+    sampleQualified: false,
+  }));
+  const coreItems = normalizedItems.slice(3, 7).map((row) => ({
+    ...row,
+    games: 0,
+    wins: 0,
+    winRate: 0,
+    popularity: 0,
+    sampleQualified: false,
+  }));
+  const situationalItems = normalizedItems.slice(7, 12).map((row) => ({
+    ...row,
+    games: 0,
+    wins: 0,
+    winRate: 0,
+    popularity: 0,
+    sampleQualified: false,
+  }));
+
+  return {
+    champion: championName,
+    region: String(filters.platform || 'global').toLowerCase(),
+    patch: 'ddragon',
+    rank: String(filters.rank || 'ALL').toUpperCase(),
+    role: String(filters.role || 'ALL').toUpperCase(),
+    versusChampion: filters.versusChampion ? String(filters.versusChampion) : null,
+    requestedVersusChampion: filters.versusChampion ? String(filters.versusChampion) : null,
+    sampleSize: 0,
+    eligibleGames: 0,
+    winRate: 0,
+    pickRate: 0,
+    minSampleSize: MIN_SAMPLE_SIZE,
+    appliedFallback: true,
+    fallbackReason:
+      'No hubo muestra suficiente de partidas para estos filtros. Se muestran recomendaciones base oficiales de Riot Data Dragon para este campeón (sin estadística real de matches).',
+    availableRoles: [],
+    availablePatches: [{ patch: 'ddragon', games: 0 }],
+    overview: {
+      primaryBuild: primaryItems.length
+        ? {
+            games: 0,
+            winRate: 0,
+            items: primaryItems,
+            coreItems: primaryItems.slice(0, 3),
+          }
+        : null,
+      starterItems,
+      coreItems,
+      situationalItems,
+      boots: [],
+      skillOrder: ['Q', 'W', 'E'],
+      topRunes: [],
+      summonerSpells: [],
+    },
+    builds: {
+      mostPopular: primaryItems.length
+        ? [{ games: 0, wins: 0, winRate: 0, popularity: 0, sampleQualified: false, items: primaryItems }]
+        : [],
+      bestPerformance: [],
+      matchupVariants: [],
+    },
+    itemStats: {
+      bySlot: {
+        starter: starterItems,
+        core1: coreItems.slice(0, 2),
+        core2: coreItems.slice(2, 4),
+        core3: situationalItems.slice(0, 2),
+        situational: situationalItems,
+      },
+      mostBought: [...starterItems, ...coreItems].slice(0, 6),
+      bestWinRate: [],
+    },
+    secondary: {
+      matchups: [],
+      counters: [],
+    },
+    charts: {
+      buildWinrate: {
+        labels: primaryItems.length ? ['Build base'] : [],
+        values: primaryItems.length ? [0] : [],
+        percentages: primaryItems.length ? [0] : [],
+      },
+      roleDistribution: {
+        labels: [],
+        values: [],
+        percentages: [],
+      },
+    },
+    cacheMeta: {
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
 
 const pct = (n: number, total: number) => Number(((n / Math.max(1, total)) * 100).toFixed(1));
 
@@ -558,21 +695,25 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
   }
 
   if (!collected.length) {
+    const fallbackItemIds = await getDdragonFallbackItems(championName);
+    if (fallbackItemIds.length) {
+      return buildDdragonFallbackPayload(
+        { ...filters, champion: championName, role: normalizedRole, rank: normalizedRank, patch: 'ddragon', queue: normalizedQueue },
+        championName,
+        items,
+        fallbackItemIds,
+      );
+    }
+
     return buildPayload({ ...filters, champion: championName, role: normalizedRole, rank: normalizedRank }, [], 0, items, 'No hay suficientes partidas para los filtros seleccionados.');
   }
 
   const sortedMatches = [...collected].sort((a, b) => b.gameCreation - a.gameCreation);
   const queueFiltered = sortedMatches.filter((m) => (normalizedQueue === 'solo' ? m.queueId === 420 : m.queueId === 440));
-  if (!queueFiltered.length) {
-    return buildPayload(
-      { ...filters, champion: championName, platform: platformInput, role: normalizedRole, rank: normalizedRank, queue: normalizedQueue },
-      [],
-      0,
-      items,
-      `No hay suficientes partidas de ${normalizedQueue === 'solo' ? 'SoloQ' : 'Flex'} para los filtros seleccionados.`
-    );
-  }
-  const queueBase = queueFiltered;
+  const queueBase = queueFiltered.length ? queueFiltered : sortedMatches;
+  const queueFallbackReason = !queueFiltered.length
+    ? `No hubo muestra suficiente en ${normalizedQueue === 'solo' ? 'SoloQ' : 'Flex'}; se usó muestra combinada de ranked para mantener recomendaciones y gráficas activas.`
+    : '';
   const latestPatch = queueBase[0]?.patch || 'latest';
   const requestedPatch = normalizePatch(filters.patch);
 
@@ -593,6 +734,7 @@ async function computeChampionAnalytics(filters: ChampionAnalyticsFilters): Prom
   let effectiveRole = normalizedRole;
   let effectivePatch = normalizedPatch === 'latest' ? latestPatch : filters.patch;
   const fallbackReasons: string[] = [];
+  if (queueFallbackReason) fallbackReasons.push(queueFallbackReason);
 
   if (!effective.length && byRoleAllPatches.length) {
     effective = byRoleAllPatches;

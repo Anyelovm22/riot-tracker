@@ -15,6 +15,7 @@ export default function ChampionBuildsPage() {
   const [ddragonVersion, setDdragonVersion] = useState('');
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
   const [error, setError] = useState('');
   const [versusInput, setVersusInput] = useState('');
   const [selectedRole, setSelectedRole] = useState('MIDDLE');
@@ -35,30 +36,23 @@ export default function ChampionBuildsPage() {
   }, []);
 
   const loadDetailsDeferred = (params: any, requestId: number) => {
-    const run = () => {
-      setLoadingDetails(true);
-      fetchChampionBuildInsights(params)
-        .then((result) => {
-          if (requestIdRef.current !== requestId) return;
-          setDetailsData(result);
-        })
-        .catch(() => {
-          if (requestIdRef.current !== requestId) return;
-          setDetailsData(null);
-        })
-        .finally(() => {
-          if (requestIdRef.current === requestId) {
-            setLoadingDetails(false);
-          }
-        });
-    };
-
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      (window as any).requestIdleCallback(run, { timeout: 900 });
-      return;
-    }
-
-    setTimeout(run, 80);
+    setLoadingDetails(true);
+    setDetailsError('');
+    fetchChampionBuildInsights(params)
+      .then((result) => {
+        if (requestIdRef.current !== requestId) return;
+        setDetailsData(result);
+      })
+      .catch((err: any) => {
+        if (requestIdRef.current !== requestId) return;
+        setDetailsData(null);
+        setDetailsError(err?.response?.data?.message || 'No se pudieron cargar detalles avanzados de builds.');
+      })
+      .finally(() => {
+        if (requestIdRef.current === requestId) {
+          setLoadingDetails(false);
+        }
+      });
   };
 
   async function loadInsights(nextVersus?: string) {
@@ -80,6 +74,7 @@ export default function ChampionBuildsPage() {
       setLoadingSummary(true);
       setLoadingDetails(false);
       setError('');
+      setDetailsError('');
       setDetailsData(null);
 
       const summaryResult = await fetchChampionBuildSummary(sharedParams);
@@ -116,6 +111,38 @@ export default function ChampionBuildsPage() {
   }, [championOptions, versusInput]);
 
   const data = detailsData || summaryData;
+  const buildChart = useMemo(() => {
+    const labels = data?.charts?.buildWinrate?.labels || [];
+    const percentages = data?.charts?.buildWinrate?.percentages || [];
+    const values = data?.charts?.buildWinrate?.values || [];
+
+    if (labels.length && percentages.length && values.length) {
+      return { labels, percentages, values };
+    }
+
+    const fallbackRows = (data?.builds?.mostPopular || []).slice(0, 5);
+    return {
+      labels: fallbackRows.map((_: any, index: number) => `Build ${index + 1}`),
+      percentages: fallbackRows.map((row: any) => row?.winRate || 0),
+      values: fallbackRows.map((row: any) => row?.games || 0),
+    };
+  }, [data]);
+  const recommendations = useMemo(() => {
+    if (!data) return [];
+    const list: string[] = [];
+    const primary = data?.overview?.primaryBuild;
+    const topCore = (primary?.coreItems || []).slice(0, 3).map((item: any) => item?.name).filter(Boolean);
+    if (topCore.length) list.push(`Core recomendado: ${topCore.join(' + ')}.`);
+    if (data?.overview?.skillOrder?.length) {
+      list.push(`Prioriza skill order: ${data.overview.skillOrder.join(' > ')}.`);
+    }
+    const goodVs = (detailsData?.secondary?.matchups || []).slice(0, 2).map((row: any) => `${row.championName} (${row.winRate}% WR)`);
+    if (goodVs.length) list.push(`Matchups favorables detectados: ${goodVs.join(', ')}.`);
+    const badVs = (detailsData?.secondary?.counters || []).slice(0, 2).map((row: any) => `${row.championName} (${row.winRate}% WR)`);
+    if (badVs.length) list.push(`Cuidado contra: ${badVs.join(', ')}.`);
+    if (!list.length) list.push('No hubo muestra suficiente para recomendaciones fuertes; prueba cambiando cola, parche o rol.');
+    return list;
+  }, [data, detailsData]);
   const patchOptions = useMemo(() => {
     const fromApi = Array.isArray(data?.availablePatches) ? data.availablePatches.map((row: any) => row.patch).filter(Boolean) : [];
     return ['all', 'latest', ...fromApi.filter((patch: string) => patch !== 'all' && patch !== 'latest')];
@@ -225,6 +252,7 @@ export default function ChampionBuildsPage() {
         ) : null}
 
         {error ? <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-red-200">{error}</div> : null}
+        {detailsError ? <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">{detailsError}</div> : null}
 
         {!loadingSummary && !error && data ? (
           <>
@@ -322,9 +350,9 @@ export default function ChampionBuildsPage() {
                 <div className="mt-4 h-72">
                   <Suspense fallback={<div className="h-full animate-pulse rounded-lg bg-white/5" />}>
                     <BuildWinrateChart
-                      labels={data?.charts?.buildWinrate?.labels || []}
-                      percentages={data?.charts?.buildWinrate?.percentages || []}
-                      values={data?.charts?.buildWinrate?.values || []}
+                      labels={buildChart.labels}
+                      percentages={buildChart.percentages}
+                      values={buildChart.values}
                     />
                   </Suspense>
                 </div>
@@ -347,6 +375,17 @@ export default function ChampionBuildsPage() {
                     );
                   })}
                 </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Recomendaciones automáticas</h2>
+              <div className="mt-3 space-y-2">
+                {recommendations.map((tip, index) => (
+                  <div key={`rec-${index}`} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text-secondary)]">
+                    {tip}
+                  </div>
+                ))}
               </div>
             </section>
 
